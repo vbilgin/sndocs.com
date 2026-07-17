@@ -1,0 +1,65 @@
+name: Build documentation site
+
+on:
+  schedule:
+    - cron: "17 7 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild even when upstream SHAs are unchanged
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sndocs-site-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: |
+          python -m pip install -r requirements.lock
+          python -m pip install --no-deps .
+
+      - name: Test pipeline
+        run: pytest
+
+      - name: Download previous rolling artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p previous-download previous-site
+          if gh release download site-artifact --pattern 'sndocs-site.tar.gz' --dir previous-download; then
+            tar -xzf previous-download/sndocs-site.tar.gz -C previous-site
+          fi
+
+      - name: Force a full rebuild
+        if: inputs.force == true
+        run: rm -f previous-site/build-manifest.json
+
+      - name: Build site
+        id: build
+        run: sndocs build --output site --previous-site previous-site --github-output "$GITHUB_OUTPUT"
+
+      - name: Package and verify site
+        if: steps.build.outputs.changed == 'true' || inputs.force == true
+        run: |
+          sndocs package --site site --destination artifacts
+          sha256sum --check artifacts/*.sha256
+
+      - name: Publish rolling GitHub Release
+        if: steps.build.outputs.changed == 'true' || inputs.force == true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view site-artifact >/dev/null 2>&1 || gh release create site-artifact --title "Latest sndocs.com static artifact" --notes "Rolling, host-agnostic documentation build."
+          gh release upload site-artifact artifacts/* --clobber

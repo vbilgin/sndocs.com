@@ -1,0 +1,13 @@
+[site]
+name = "sndocs.com"
+url = "https://sndocs.com"
+description = "Independent community mirror of ServiceNow product documentation"
+
+[upstream]
+repository = "ServiceNow/ServiceNowDocs"
+llms_path = "llms.txt"
+families = []
+
+[build]
+archive_basename = "sndocs-site"
+

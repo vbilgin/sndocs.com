@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sndocs-pipeline"
+version = "0.1.0"
+description = "Build a versioned MkDocs mirror of ServiceNowDocs"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+dependencies = [
+  "mkdocs-material>=9.6,<10",
+  "PyYAML>=6.0,<7",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.3,<9"]
+
+[project.scripts]
+sndocs = "sndocs.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sndocs"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
