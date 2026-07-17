@@ -40,6 +40,38 @@ def test_same_publication_disambiguates_duplicate_basename(tmp_path):
     assert resolver.report()["repairs"][0]["method"] == "same-publication"
 
 
+def test_explicit_override_disambiguates_known_upstream_defect(tmp_path):
+    root = markdown_tree(
+        tmp_path,
+        [
+            "build-workflows/approvals/r_ApprovalSummarizerFormatter.md",
+            "servicenow-platform/approvals/r_ApprovalSummarizerFormatter.md",
+        ],
+    )
+    resolver = FamilyLinkResolver(root, "australia")
+    resolved = resolver.resolve(
+        "platform-administration/r_ApprovalSummarizerFormatter.md",
+        PurePosixPath("platform-administration/c_Formatters.md"),
+    )
+    assert resolved == PurePosixPath(
+        "servicenow-platform/approvals/r_ApprovalSummarizerFormatter.md"
+    )
+    assert resolver.report()["repairs"][0]["method"] == "explicit-override"
+
+
+def test_explicit_override_requires_existing_destination(tmp_path):
+    root = markdown_tree(
+        tmp_path,
+        ["build-workflows/approvals/r_ApprovalSummarizerFormatter.md"],
+    )
+    resolver = FamilyLinkResolver(root, "australia")
+    with pytest.raises(ValueError, match=r"override target does not exist.*servicenow-platform"):
+        resolver.resolve(
+            "platform-administration/r_ApprovalSummarizerFormatter.md",
+            PurePosixPath("platform-administration/c_Formatters.md"),
+        )
+
+
 def test_unresolved_ambiguity_fails_with_context(tmp_path):
     root = markdown_tree(tmp_path, ["one/page.md", "two/page.md"])
     resolver = FamilyLinkResolver(root, "australia")
@@ -55,4 +87,3 @@ def test_missing_target_is_aggregated_by_referring_page(tmp_path):
     report = resolver.report()
     assert report["counts"]["placeholder"] == 1
     assert report["placeholders"][0]["referring_pages"] == ["other/source.md", "pub/source.md"]
-

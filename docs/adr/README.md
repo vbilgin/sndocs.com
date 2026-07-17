@@ -17,5 +17,6 @@ Accepted ADRs are immutable except for corrections and explicit supersession met
 - [ADR-0002: Publish versioned release families and retain archives](0002-versioned-families-and-archive-retention.md)
 - [ADR-0003: Generate a lightly enriched MkDocs Material site](0003-mkdocs-material-content-processing.md)
 - [ADR-0004: Repair deterministic stale links and preserve missing targets](0004-stale-link-resolution.md)
+- [ADR-0007: Permit narrowly scoped explicit stale-link overrides](0007-explicit-stale-link-overrides.md)
 - [ADR-0005: Publish host-agnostic rolling release artifacts](0005-host-agnostic-release-artifacts.md)
 - [ADR-0006: Maintain layered repository context for agents and contributors](0006-layered-project-context.md)

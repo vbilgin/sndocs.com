@@ -13,7 +13,7 @@ Build `sndocs.com`, an independent community documentation mirror generated from
 - `source.py` shallow-clones each release family.
 - `navigation.py` converts publication `index.md` hierarchies into MkDocs navigation.
 - `transform.py` tolerates malformed YAML frontmatter, enriches pages, rewrites links, renders omitted-image notices, and creates placeholders for unavailable content.
-- `links.py` repairs stale same-family links using exact paths, unique basenames, and same-publication disambiguation; unresolved ambiguity is fatal.
+- `links.py` repairs stale same-family links using exact paths, narrowly scoped reviewed overrides, unique basenames, and same-publication disambiguation; unresolved ambiguity is fatal.
 - `builder.py` builds families independently, reuses unchanged output, retains removed families as archives, and assembles manifests and version metadata.
 - `artifacts.py` validates the assembled site and creates ZIP/TAR archives with SHA-256 checksums.
 - `.github/workflows/build-site.yml` runs scheduled or manual builds and publishes the rolling `site-artifact` GitHub Release when inputs change.
@@ -26,7 +26,7 @@ The public CLI is `sndocs` with `discover`, `build`, `validate`, and `package` c
 - Every current family is published under `/<family>/`; the root redirects to the newest.
 - Deleted upstream families remain available as immutable archived snapshots.
 - Publication indexes define navigation, but all Markdown files are rendered so inbound links remain valid.
-- Same-family moved links are repaired only when the destination is deterministic.
+- Same-family moved links are repaired when the destination is deterministic or selected by a family/source/target-specific reviewed override.
 - Missing upstream targets receive clearly marked diagnostic placeholder pages.
 - Cross-family moved-link resolution is intentionally not attempted.
 - MkDocs strict mode remains enabled; ambiguity and pipeline-created broken links fail.

@@ -9,6 +9,15 @@ class AmbiguousLinkError(ValueError):
     """Raised when a stale target has more than one plausible destination."""
 
 
+LINK_OVERRIDES: dict[tuple[str, PurePosixPath, PurePosixPath], PurePosixPath] = {
+    (
+        "australia",
+        PurePosixPath("platform-administration/c_Formatters.md"),
+        PurePosixPath("platform-administration/r_ApprovalSummarizerFormatter.md"),
+    ): PurePosixPath("servicenow-platform/approvals/r_ApprovalSummarizerFormatter.md"),
+}
+
+
 def normalize_path(value: str) -> PurePosixPath:
     normalized = posixpath.normpath(value)
     if normalized == ".." or normalized.startswith("../") or normalized.startswith("/"):
@@ -35,6 +44,14 @@ class FamilyLinkResolver:
         if target in self.paths:
             self.exact += 1
             return target
+
+        override = LINK_OVERRIDES.get((self.family, referring_page, target))
+        if override is not None:
+            if override not in self.paths:
+                raise ValueError(
+                    f"stale link override target does not exist in {self.family}: {override}"
+                )
+            return self._repair(target, override, referring_page, "explicit-override")
 
         candidates = self.by_basename.get(target.name.casefold(), [])
         if len(candidates) == 1:
@@ -88,4 +105,3 @@ class FamilyLinkResolver:
             "repairs": self.repairs,
             "placeholders": placeholders,
         }
-

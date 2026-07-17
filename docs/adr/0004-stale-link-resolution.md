@@ -1,6 +1,6 @@
 # ADR-0004: Repair deterministic stale links and preserve missing targets
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0007](0007-explicit-stale-link-overrides.md)
 - **Date:** 2026-07-16
 - **Decision owner:** Victor Bilgin
 - **Related commit:** `32e6f14` — `fix: resolve stale upstream documentation links`

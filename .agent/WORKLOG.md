@@ -2,6 +2,27 @@
 
 Reverse-chronological record of significant project work. This is a historical index, not the source of truth for implementation details; consult `.agent/CONTEXT.md`, ADRs, the current code, tests, and Git history as appropriate.
 
+## 2026-07-17 — Override an ambiguous Australia formatter link
+
+- **Work performed by:** Codex, with direction from Victor Bilgin
+- **Commit:** Pending
+
+### Outcome
+
+Allowed the Australia family build to resolve one reviewed upstream ambiguity while preserving fatal behavior for every unrecognized ambiguous stale link.
+
+### Changes and decisions
+
+- Added an override keyed by family, referring page, and original target for the stale Approval summarizer formatter link.
+- Selected the `servicenow-platform/approvals/` destination based on its administrative canonical location and breadcrumb.
+- Required override destinations to exist and recorded successful use as `explicit-override` in the link report.
+- Added ADR-0007 to supersede and narrowly extend ADR-0004's strict ambiguity policy.
+
+### Verification
+
+- Full test suite: 21 passed, 1 filesystem-specific skip.
+- `git diff --check` passed.
+
 ## 2026-07-16 — Establish layered agent context
 
 - **Work performed by:** Codex, with direction from Victor Bilgin
