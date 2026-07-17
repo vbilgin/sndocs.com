@@ -27,6 +27,21 @@ Discover the current upstream structure without building it:
 .venv/bin/sndocs discover
 ```
 
+For faster repeated testing, create a reusable full upstream clone during the first discovery or build, then use it offline on later runs:
+
+```shell
+.venv/bin/sndocs discover --clone-source ../ServiceNowDocs
+.venv/bin/sndocs build --output site --source-repo ../ServiceNowDocs
+```
+
+The local clone must be clean and have exactly one SSH or HTTPS remote matching `upstream.repository`. Normal local runs use its committed remote-tracking refs without network access or branch switching. Refresh those refs explicitly when desired:
+
+```shell
+.venv/bin/sndocs discover --source-repo ../ServiceNowDocs --refresh-source
+```
+
+`--clone-source` fails if its destination already exists. Use `--source-repo` for an existing clone. Both source options are available on `discover` and `build`; local paths are intentionally per-run CLI inputs rather than project configuration.
+
 Build a complete site, optionally reusing a previously unpacked artifact:
 
 ```shell

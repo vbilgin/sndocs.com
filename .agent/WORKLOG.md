@@ -2,6 +2,28 @@
 
 Reverse-chronological record of significant project work. This is a historical index, not the source of truth for implementation details; consult `.agent/CONTEXT.md`, ADRs, the current code, tests, and Git history as appropriate.
 
+## 2026-07-17 — Add reusable local upstream sources
+
+- **Work performed by:** Codex, with direction from Victor Bilgin
+- **Commit:** Pending
+
+### Outcome
+
+Enabled offline discovery and faster repeated builds from a reusable full clone of `ServiceNow/ServiceNowDocs` while preserving exact commit SHA and incremental-reuse semantics.
+
+### Changes and decisions
+
+- Added `--source-repo` and `--clone-source` to discovery and build, with explicit `--refresh-source` fetching for existing clones.
+- Required clean local clones and one matching GitHub remote, then read authoritative metadata and family SHAs from remote-tracking refs.
+- Exported exact commits into isolated workspaces without switching or modifying the reusable clone.
+- Moved source preparation ahead of output removal and recorded the reproducible local-snapshot policy in ADR-0008.
+
+### Verification
+
+- Full test suite: 32 passed, 1 filesystem-specific skip.
+- CLI help inspection passed for discovery and build source options.
+- Strict fixture build, Python compilation, and `git diff --check` passed.
+
 ## 2026-07-17 — Override an ambiguous Australia formatter link
 
 - **Work performed by:** Codex, with direction from Victor Bilgin

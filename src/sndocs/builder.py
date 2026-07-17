@@ -14,7 +14,7 @@ from . import __version__
 from .discovery import discover
 from .models import Discovery, Settings
 from .navigation import parse_index
-from .source import clone_family
+from .source import RemoteSource, SourceRepository
 from .transform import transform_tree
 
 MANIFEST_NAME = "build-manifest.json"
@@ -77,10 +77,13 @@ def write_mkdocs_config(settings: Settings, source: Path, work: Path, family: st
     return path
 
 
-def build_family(settings: Settings, discovery: Discovery, family: str, work_root: Path, output: Path) -> dict:
+def build_family(
+    settings: Settings, discovery: Discovery, family: str, work_root: Path, output: Path,
+    source_repository: SourceRepository,
+) -> dict:
     work = work_root / family
     source = work / "source"
-    clone_family(settings.repository, family, source)
+    source_repository.materialize(settings, family, discovery.shas[family], source)
     docs = work / "docs"
     link_report = transform_tree(
         source / "markdown", docs, family, set(discovery.families), settings.repository
@@ -110,8 +113,12 @@ def empty_link_report(family: str) -> dict:
     }
 
 
-def build_site(settings: Settings, output: Path, work: Path, previous_site: Path | None = None) -> tuple[dict, bool]:
-    discovery = discover(settings)
+def build_site(
+    settings: Settings, output: Path, work: Path, previous_site: Path | None = None,
+    source_repository: SourceRepository | None = None, discovery_result: Discovery | None = None,
+) -> tuple[dict, bool]:
+    source_repository = source_repository or RemoteSource()
+    discovery = discovery_result or discover(settings, source_repository)
     previous = read_manifest(previous_site)
     previous_link_reports = read_link_reports(previous_site)
     fingerprint = pipeline_fingerprint(settings.root)
@@ -130,7 +137,9 @@ def build_site(settings: Settings, output: Path, work: Path, previous_site: Path
             shutil.copytree(previous_site / family, output / family, dirs_exist_ok=True)
             family_link_reports[family] = previous_link_reports.get(family, empty_link_report(family))
         else:
-            family_link_reports[family] = build_family(settings, discovery, family, work, output)
+            family_link_reports[family] = build_family(
+                settings, discovery, family, work, output, source_repository
+            )
             changed = True
         family_records[family] = {
             "source_sha": sha,

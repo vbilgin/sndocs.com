@@ -10,7 +10,7 @@ Build `sndocs.com`, an independent community documentation mirror generated from
 
 - `pipeline.toml` defines site identity, upstream repository, optional family allowlist, and artifact naming.
 - `discovery.py` parses upstream `llms.txt`, preserves its family/publication ordering, and resolves release-branch SHAs.
-- `source.py` shallow-clones each release family.
+- `source.py` provides remote and reusable-local source implementations; local sources discover and export exact family commits from clean remote-tracking refs without changing branches.
 - `navigation.py` converts publication `index.md` hierarchies into MkDocs navigation.
 - `transform.py` tolerates malformed YAML frontmatter, enriches pages, rewrites links, renders omitted-image notices, and creates placeholders for unavailable content.
 - `links.py` repairs stale same-family links using exact paths, narrowly scoped reviewed overrides, unique basenames, and same-publication disambiguation; unresolved ambiguity is fatal.
@@ -18,7 +18,7 @@ Build `sndocs.com`, an independent community documentation mirror generated from
 - `artifacts.py` validates the assembled site and creates ZIP/TAR archives with SHA-256 checksums.
 - `.github/workflows/build-site.yml` runs scheduled or manual builds and publishes the rolling `site-artifact` GitHub Release when inputs change.
 
-The public CLI is `sndocs` with `discover`, `build`, `validate`, and `package` commands.
+The public CLI is `sndocs` with `discover`, `build`, `validate`, and `package` commands. `discover` and `build` accept `--source-repo`, `--clone-source`, and explicit `--refresh-source` inputs for fast offline testing.
 
 ## Important invariants and decisions
 
@@ -54,7 +54,7 @@ Packaging produces `sndocs-site.tar.gz`, `sndocs-site.zip`, and SHA-256 files fo
 - Malformed upstream YAML containing unquoted colons is handled with a conservative field-level fallback parser.
 - Stale same-family links are repaired and genuinely missing targets receive placeholders.
 - Incremental and archived builds retain link-resolution reports.
-- The test suite currently reports 19 passing tests and one filesystem-specific skip on case-insensitive macOS.
+- The test suite currently reports 32 passing tests and one filesystem-specific skip on case-insensitive macOS.
 - Live discovery previously confirmed Australia, Zurich, Yokohama, and Xanadu branches.
 - Durable architectural decisions are recorded under `docs/adr/`.
 - Repository-wide agent operating and context-maintenance instructions are established in root `AGENTS.md`.

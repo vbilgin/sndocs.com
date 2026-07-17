@@ -28,9 +28,9 @@ def test_fresh_build_writes_report_and_manifest_counts(tmp_path, monkeypatch):
         "placeholders": [],
     }
 
-    monkeypatch.setattr(builder, "discover", lambda _settings: discovery)
+    monkeypatch.setattr(builder, "discover", lambda _settings, _source: discovery)
 
-    def fake_build(_settings, _discovery, family, _work, output):
+    def fake_build(_settings, _discovery, family, _work, output, _source):
         family_output = output / family
         family_output.mkdir(parents=True)
         (family_output / "index.html").write_text("ok", encoding="utf-8")
@@ -64,7 +64,7 @@ def test_incremental_build_reuses_previous_report(tmp_path, monkeypatch):
         json.dumps({"schema_version": 1, "families": {"australia": report}}), encoding="utf-8"
     )
 
-    monkeypatch.setattr(builder, "discover", lambda _settings: discovery)
+    monkeypatch.setattr(builder, "discover", lambda _settings, _source: discovery)
     monkeypatch.setattr(
         builder,
         "build_family",
