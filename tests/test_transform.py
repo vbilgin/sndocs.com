@@ -35,6 +35,21 @@ def test_empty_document_gets_diagnostic_placeholder():
     assert "Source content unavailable" in result
 
 
+def test_malformed_unquoted_colon_in_frontmatter_is_preserved():
+    text = """---
+title: Products required to enable ITOM AIOps functionality: ITOM AIOps and Now Assist for ITOM
+release: australia
+keywords: [AIOps, ITOM]
+---
+# Requirements
+"""
+    metadata, body = split_frontmatter(text)
+    assert metadata["title"] == "Products required to enable ITOM AIOps functionality: ITOM AIOps and Now Assist for ITOM"
+    assert metadata["release"] == "australia"
+    assert metadata["keywords"] == ["AIOps", "ITOM"]
+    assert body == "# Requirements\n"
+
+
 def test_unknown_family_link_is_preserved():
     url = "https://raw.githubusercontent.com/ServiceNow/ServiceNowDocs/unknown/markdown/pub/a.md"
     result = transform_document(url, "australia", PurePosixPath("pub/a.md"), {"australia"}, "source")
