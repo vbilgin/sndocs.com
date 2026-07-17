@@ -11,11 +11,18 @@ from pathlib import Path
 def validate_site(site: Path) -> None:
     manifest = json.loads((site / "build-manifest.json").read_text(encoding="utf-8"))
     versions = json.loads((site / "versions.json").read_text(encoding="utf-8"))
+    link_report = json.loads((site / "link-report.json").read_text(encoding="utf-8"))
     if versions["latest"] != manifest["latest"]:
         raise ValueError("manifest and versions.json disagree about the latest family")
     for family in manifest["families"]:
         if not (site / family / "index.html").exists():
             raise ValueError(f"family {family} has no generated index.html")
+        reported = link_report.get("families", {}).get(family)
+        if not reported:
+            raise ValueError(f"family {family} has no link-resolution report")
+        expected_counts = manifest["families"][family].get("link_counts")
+        if expected_counts is not None and expected_counts != reported.get("counts"):
+            raise ValueError(f"family {family} link counts disagree between manifest and report")
     current_families = set(manifest["families"])
     raw_link = re.compile(r"raw\.githubusercontent\.com/ServiceNow/ServiceNowDocs/([^/]+)/markdown/")
     for html_file in site.rglob("*.html"):

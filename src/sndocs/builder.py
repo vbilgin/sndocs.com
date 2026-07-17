@@ -18,6 +18,7 @@ from .source import clone_family
 from .transform import transform_tree
 
 MANIFEST_NAME = "build-manifest.json"
+LINK_REPORT_NAME = "link-report.json"
 
 
 def pipeline_fingerprint(root: Path) -> str:
@@ -25,7 +26,7 @@ def pipeline_fingerprint(root: Path) -> str:
     paths = [root / "pyproject.toml", root / "pipeline.toml"]
     paths += sorted((root / "src" / "sndocs").rglob("*"))
     for path in paths:
-        if path.is_file():
+        if path.is_file() and "__pycache__" not in path.parts and path.suffix not in {".pyc", ".pyo"}:
             digest.update(path.relative_to(root).as_posix().encode())
             digest.update(path.read_bytes())
     return digest.hexdigest()
@@ -76,26 +77,50 @@ def write_mkdocs_config(settings: Settings, source: Path, work: Path, family: st
     return path
 
 
-def build_family(settings: Settings, discovery: Discovery, family: str, work_root: Path, output: Path) -> None:
+def build_family(settings: Settings, discovery: Discovery, family: str, work_root: Path, output: Path) -> dict:
     work = work_root / family
     source = work / "source"
     clone_family(settings.repository, family, source)
     docs = work / "docs"
-    transform_tree(source / "markdown", docs, family, set(discovery.families), settings.repository)
+    link_report = transform_tree(
+        source / "markdown", docs, family, set(discovery.families), settings.repository
+    )
     config = write_mkdocs_config(settings, source, work, family, discovery)
     subprocess.run([sys.executable, "-m", "mkdocs", "build", "--clean", "--config-file", str(config)], check=True)
     shutil.copytree(work / "site", output / family, dirs_exist_ok=True)
+    return link_report
+
+
+def read_link_reports(site: Path | None) -> dict[str, dict]:
+    if not site:
+        return {}
+    path = site / LINK_REPORT_NAME
+    if not path.exists():
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return data.get("families", {})
+
+
+def empty_link_report(family: str) -> dict:
+    return {
+        "family": family,
+        "counts": {"exact": 0, "repaired": 0, "placeholder": 0, "ambiguous": 0},
+        "repairs": [],
+        "placeholders": [],
+    }
 
 
 def build_site(settings: Settings, output: Path, work: Path, previous_site: Path | None = None) -> tuple[dict, bool]:
     discovery = discover(settings)
     previous = read_manifest(previous_site)
+    previous_link_reports = read_link_reports(previous_site)
     fingerprint = pipeline_fingerprint(settings.root)
     previous_families = previous.get("families", {})
     force_all = previous.get("pipeline_fingerprint") != fingerprint
     changed = force_all or previous.get("latest") != discovery.latest
     output.mkdir(parents=True, exist_ok=True)
     family_records: dict[str, dict] = {}
+    family_link_reports: dict[str, dict] = {}
 
     for family in discovery.families:
         sha = discovery.shas[family]
@@ -103,16 +128,28 @@ def build_site(settings: Settings, output: Path, work: Path, previous_site: Path
         can_reuse = not force_all and old.get("source_sha") == sha and previous_site and (previous_site / family).is_dir()
         if can_reuse:
             shutil.copytree(previous_site / family, output / family, dirs_exist_ok=True)
+            family_link_reports[family] = previous_link_reports.get(family, empty_link_report(family))
         else:
-            build_family(settings, discovery, family, work, output)
+            family_link_reports[family] = build_family(settings, discovery, family, work, output)
             changed = True
-        family_records[family] = {"source_sha": sha, "archived": False, "path": f"/{family}/"}
+        family_records[family] = {
+            "source_sha": sha,
+            "archived": False,
+            "path": f"/{family}/",
+            "link_counts": family_link_reports[family]["counts"],
+        }
 
     for family, record in previous_families.items():
         if family in family_records or not previous_site or not (previous_site / family).is_dir():
             continue
         shutil.copytree(previous_site / family, output / family, dirs_exist_ok=True)
-        family_records[family] = {**record, "archived": True, "path": f"/{family}/"}
+        family_link_reports[family] = previous_link_reports.get(family, empty_link_report(family))
+        family_records[family] = {
+            **record,
+            "archived": True,
+            "path": f"/{family}/",
+            "link_counts": family_link_reports[family]["counts"],
+        }
         changed = changed or not record.get("archived", False)
 
     versions = {
@@ -123,6 +160,10 @@ def build_site(settings: Settings, output: Path, work: Path, previous_site: Path
         ],
     }
     (output / "versions.json").write_text(json.dumps(versions, indent=2) + "\n", encoding="utf-8")
+    aggregate_link_report = {"schema_version": 1, "families": family_link_reports}
+    (output / LINK_REPORT_NAME).write_text(
+        json.dumps(aggregate_link_report, indent=2) + "\n", encoding="utf-8"
+    )
     (output / "index.html").write_text(
         f'<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=./{discovery.latest}/">'
         f'<link rel="canonical" href="./{discovery.latest}/"><title>sndocs.com</title>', encoding="utf-8"
@@ -152,4 +193,10 @@ limitations under the License.
         "families": family_records,
     }
     (output / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    for family, report in family_link_reports.items():
+        counts = report["counts"]
+        print(
+            f"Link resolution [{family}]: {counts['exact']} exact, {counts['repaired']} repaired, "
+            f"{counts['placeholder']} placeholders, {counts['ambiguous']} ambiguous"
+        )
     return manifest, changed
