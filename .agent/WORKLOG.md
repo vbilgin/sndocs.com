@@ -2,6 +2,28 @@
 
 Reverse-chronological record of significant project work. This is a historical index, not the source of truth for implementation details; consult `.agent/CONTEXT.md`, ADRs, the current code, tests, and Git history as appropriate.
 
+## 2026-07-17 — Resolve stale links using canonical metadata
+
+- **Work performed by:** Codex, with direction from Victor Bilgin
+- **Commit:** Pending
+
+### Outcome
+
+Added automatic, metadata-based resolution for ambiguous stale links whose candidates contain one uniquely self-canonical page, while retaining reviewed overrides for genuine metadata ties.
+
+### Changes and decisions
+
+- Centralized frontmatter parsing and indexed exact ServiceNow canonical-path identities in the family link resolver.
+- Applied self-canonical resolution after path-based rules and before explicit overrides, making the behavior independent of family, referring page, or predefined target.
+- Removed the pending Source-to-Pay glossary override, retained the tied formatter override, and recorded the policy in ADR-0009.
+- Added regression coverage for unseen referring pages, another upstream duplicate pattern, malformed frontmatter, escaped paths, invalid metadata, tied canonical candidates, and override fallback.
+
+### Verification
+
+- Full test suite: 42 passed, 1 filesystem-specific skip.
+- Australia-wide transformation completed with 219,983 exact links, 15,225 repaired links, 121 placeholders, and zero ambiguities.
+- `git diff --check` passed.
+
 ## 2026-07-17 — Add reusable local upstream sources
 
 - **Work performed by:** Codex, with direction from Victor Bilgin

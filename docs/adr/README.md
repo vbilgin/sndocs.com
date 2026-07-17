@@ -19,5 +19,6 @@ Accepted ADRs are immutable except for corrections and explicit supersession met
 - [ADR-0004: Repair deterministic stale links and preserve missing targets](0004-stale-link-resolution.md)
 - [ADR-0007: Permit narrowly scoped explicit stale-link overrides](0007-explicit-stale-link-overrides.md)
 - [ADR-0008: Use reproducible local source snapshots for testing](0008-reproducible-local-source-snapshots.md)
+- [ADR-0009: Resolve stale links using canonical metadata before overrides](0009-canonical-metadata-link-resolution.md)
 - [ADR-0005: Publish host-agnostic rolling release artifacts](0005-host-agnostic-release-artifacts.md)
 - [ADR-0006: Maintain layered repository context for agents and contributors](0006-layered-project-context.md)

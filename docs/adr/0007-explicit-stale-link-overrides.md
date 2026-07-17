@@ -1,6 +1,6 @@
 # ADR-0007: Permit narrowly scoped explicit stale-link overrides
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0009](0009-canonical-metadata-link-resolution.md)
 - **Date:** 2026-07-17
 - **Decision owner:** Victor Bilgin
 - **Supersedes:** [ADR-0004](0004-stale-link-resolution.md)
