@@ -5,7 +5,8 @@ Reverse-chronological record of significant project work. This is a historical i
 ## 2026-07-17 — Resolve stale links using canonical metadata
 
 - **Work performed by:** Codex, with direction from Victor Bilgin
-- **Commit:** Pending
+- **Committed by:** Victor Bilgin
+- **Commit:** `33abe28` — `Resolve stale links using canonical metadata`
 
 ### Outcome
 
@@ -27,7 +28,8 @@ Added automatic, metadata-based resolution for ambiguous stale links whose candi
 ## 2026-07-17 — Add reusable local upstream sources
 
 - **Work performed by:** Codex, with direction from Victor Bilgin
-- **Commit:** Pending
+- **Committed by:** Victor Bilgin
+- **Commit:** `49f4ae1` — `Add reusable local upstream source support`
 
 ### Outcome
 
@@ -49,7 +51,8 @@ Enabled offline discovery and faster repeated builds from a reusable full clone 
 ## 2026-07-17 — Override an ambiguous Australia formatter link
 
 - **Work performed by:** Codex, with direction from Victor Bilgin
-- **Commit:** Pending
+- **Committed by:** Victor Bilgin
+- **Commit:** `142924d` — `Allow narrowly scoped overrides for ambiguous stale links`
 
 ### Outcome
 
@@ -71,7 +74,7 @@ Allowed the Australia family build to resolve one reviewed upstream ambiguity wh
 
 - **Work performed by:** Codex, with direction from Victor Bilgin
 - **Committed by:** Victor Bilgin
-- **Commit:** `docs: establish layered project context and agent guidance`
+- **Commit:** `0a78be3` — `docs: establish layered project context and agent guidance`
 
 ### Outcome
 
