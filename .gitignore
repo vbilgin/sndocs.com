@@ -9,3 +9,4 @@ work/
 artifacts/
 previous-site/
 
+.DS_Store
