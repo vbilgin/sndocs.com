@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-07-17
 - **Decision owner:** Victor Bilgin
-- **Related commit:** Pending
+- **Related commit:** `3198cfa` — `Optimize build storage and add smoke mode`
 
 ## Context
 

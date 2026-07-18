@@ -2,10 +2,24 @@
 
 Reverse-chronological record of significant project work. This is a historical index, not the source of truth for implementation details; consult `.agent/CONTEXT.md`, ADRs, the current code, tests, and Git history as appropriate.
 
+## 2026-07-18 — Clean up project records
+
+- **Work performed by:** Codex, with direction from Victor Bilgin
+- **Commit:** `Clean up project records` (intended subject)
+
+### Outcome
+
+Reconciled project context, worklog commit metadata, and ADR references with current Git history while keeping the active context files within their size limits.
+
+### Verification
+
+- Reviewed every file under `.agent/` and `docs/adr/`, verified indexed ADR links and referenced commit SHAs, and ran Markdown whitespace checks.
+
 ## 2026-07-18 — Strengthen ServiceNow attribution
 
 - **Work performed by:** Codex, with direction from Victor Bilgin
-- **Commit:** `Strengthen ServiceNow attribution` (intended subject)
+- **Committed by:** Victor Bilgin
+- **Commit:** `27c6191` — `Strengthen ServiceNow attribution`
 
 ### Outcome
 
@@ -26,7 +40,7 @@ Added ServiceNow's required trademark and build-year copyright notices to the RE
 
 - **Work performed by:** Codex, with direction from Victor Bilgin
 - **Committed by:** Victor Bilgin
-- **Commit:** `Minify generated family HTML` (intended subject)
+- **Commit:** `cf43b61` — `Minify generated family HTML`
 
 ### Outcome
 
@@ -54,7 +68,7 @@ Added deterministic HTML-aware minification to every production and smoke family
 
 - **Work performed by:** Codex, with direction from Victor Bilgin
 - **Committed by:** Victor Bilgin
-- **Commit:** `Apply sndocs.com branding to Material` (intended subject)
+- **Commit:** `829859b` — `Apply sndocs.com branding to Material`
 
 ### Outcome
 
@@ -81,7 +95,7 @@ Applied the local sndocs.com visual identity to newly rendered family sites with
 
 - **Work performed by:** Codex, with direction from Victor Bilgin
 - **Committed by:** Victor Bilgin
-- **Commit:** `Add clean URL preview server` (intended subject)
+- **Commit:** `683e6fd` — `Add clean URL preview server`
 
 ### Outcome
 
@@ -106,7 +120,7 @@ Made the clean directory-URL contract explicit and added a supported local HTTP 
 
 - **Work performed by:** Codex, with direction from Victor Bilgin
 - **Committed by:** Victor Bilgin
-- **Commit:** `Normalize upstream validation defects` (intended subject)
+- **Commit:** `20bc107` — `Normalize upstream validation defects`
 
 ### Outcome
 
@@ -136,7 +150,7 @@ Made the Australia source snapshot pass strict MkDocs rendering and artifact val
 
 - **Work performed by:** Codex, with direction from Victor Bilgin
 - **Committed by:** Victor Bilgin
-- **Commit:** `Optimize build storage and add smoke mode` (intended subject)
+- **Commit:** `3198cfa` — `Optimize build storage and add smoke mode`
 
 ### Outcome
 
@@ -260,9 +274,6 @@ Established the first part of a layered, repository-backed context system intend
 - Cross-checked the context summary against current source files and recent commits.
 - Validated the root agent policy's referenced paths, context/worklog size thresholds, Markdown source formatting, and whitespace.
 - Test suite: 19 passed, 1 skipped on a case-insensitive macOS filesystem.
-
-### Follow-up
-
 
 ## 2026-07-16 — Resolve stale upstream documentation links
 

@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-07-18
 - **Decision owner:** Victor Bilgin
-- **Related commit:** `Add clean URL preview server` (intended subject)
+- **Related commit:** `683e6fd` — `Add clean URL preview server`
 
 ## Context
 

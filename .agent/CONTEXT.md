@@ -4,7 +4,7 @@ Compact handoff document for contributors and agents. Keep this file focused on 
 
 ## Objective
 
-Build `sndocs.com`, an independent community documentation mirror generated from the public `ServiceNow/ServiceNowDocs` repository. The pipeline discovers ServiceNow release families, transforms their Markdown, builds versioned MkDocs Material sites, and packages the complete static tree as host-agnostic GitHub Release artifacts.
+Build `sndocs.com`, an independent documentation mirror generated from `ServiceNow/ServiceNowDocs`. The pipeline discovers release families, transforms Markdown, builds versioned MkDocs Material sites, and packages the tree as host-agnostic GitHub Release artifacts.
 
 ## Current architecture
 
@@ -63,7 +63,7 @@ Packaging produces `sndocs-site.tar.gz`, `sndocs-site.zip`, and SHA-256 files fo
 - Production and smoke builds minify HTML while leaving inline JavaScript and CSS untouched. A strict Australia rebuild rendered in 253 seconds and reduced the tree from 4,333,444,164 to 2,321,729,890 bytes (46.4%), including an unchanged 238,443,879-byte search directory.
 - Australia production packaging has also been validated locally; retained `site-australia/` and `artifacts-australia/` outputs are ignored for inspection.
 - Every family now receives a generated Material landing page at its manifest route, and artifact validation rejects missing family roots or unrewritten current-family raw Markdown links.
-- Repository-wide agent operating and context-maintenance instructions are established in root `AGENTS.md`.
+- Repository-wide agent and context-maintenance instructions are established in root `AGENTS.md`.
 
 ## Known gaps and risks
 
