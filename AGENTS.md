@@ -19,6 +19,13 @@ These instructions apply to the entire repository. Keep this file short and stab
 - Avoid complete family builds unless the task requires integration validation; they are network-, disk-, and time-intensive.
 - Preserve unrelated user changes and work safely in a dirty worktree.
 
+## Branding resources
+
+- Before creating or modifying branded site, README, repository, or promotional materials, consult `local/branding/` as the authoritative local branding reference.
+- Use `local/branding/brand_colors.json` for machine-readable color definitions and `local/branding/color_palette.png` for a visual reference. The current palette is Classic Crimson `#d7263d`, Majorelle Blue `#6a4cff`, Pumpkin Spice `#ff8c42`, Carbon Black `#262626`, and Parchment `#faf7f2`; read the source files for exact current values.
+- Use the light- or dark-background SVG logomark from `local/branding/design_files/exports/` as appropriate. Preserve supplied assets rather than recreating or approximating them; editable source artwork is in `local/branding/design_files/logo.ai`.
+- `local/` is intentionally Git-ignored. Reference its contents locally, but do not add them to Git or assume they are available in clones or automated environments.
+
 ## Development and verification
 
 - Support Python 3.11 or newer and use the existing virtual-environment workflow documented in `README.md`.
