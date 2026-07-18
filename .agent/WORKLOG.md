@@ -2,6 +2,33 @@
 
 Reverse-chronological record of significant project work. This is a historical index, not the source of truth for implementation details; consult `.agent/CONTEXT.md`, ADRs, the current code, tests, and Git history as appropriate.
 
+## 2026-07-18 — Apply sndocs.com branding to Material
+
+- **Work performed by:** Codex, with direction from Victor Bilgin
+- **Committed by:** Victor Bilgin
+- **Commit:** `Apply sndocs.com branding to Material` (intended subject)
+
+### Outcome
+
+Applied the local sndocs.com visual identity to newly rendered family sites with a tracked logomark and favicon bundle, a Parchment light canvas, and contrast-safe brand colors.
+
+### Changes and decisions
+
+- Copied the supplied OnLight logomark and favicon assets into the tracked Material override tree while retaining `local/branding/` as the ignored editable source.
+- Made favicon and web-manifest references family-relative and host-agnostic, including relative icon paths within the manifest.
+- Assigned Carbon Black to text and the footer, Majorelle Blue to interactive states, Classic Crimson to structural accents, and Pumpkin Spice to warning surfaces.
+- Preserved immutable archived-family output; current families receive the branding when the changed pipeline fingerprint triggers their next build.
+
+### Verification
+
+- Full test suite passed with 59 tests and one filesystem-specific skip; the strict Material fixture passed with production search enabled and smoke search disabled.
+- Confirmed every copied logo and favicon image matches its ignored source byte-for-byte, all family-relative branding requests return successfully, and `git diff --check` passes.
+- Browser inspection at 1440×900 and 390×844 verified the logo proportions, Parchment/Carbon surfaces, Blue interactive states, Crimson metadata and header accents, release selector, responsive layout, footer contrast, and absence of browser console warnings or errors.
+
+### Follow-up
+
+- Add a dark theme only after a complete dark-background asset treatment is available.
+
 ## 2026-07-18 — Preserve clean URLs and add local preview
 
 - **Work performed by:** Codex, with direction from Victor Bilgin

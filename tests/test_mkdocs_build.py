@@ -1,3 +1,4 @@
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -53,22 +54,51 @@ def test_fixture_builds_with_material_theme(tmp_path, search):
     )
     loaded = yaml.safe_load(config.read_text(encoding="utf-8"))
     assert "navigation.prune" in loaded["theme"]["features"]
+    assert loaded["theme"]["logo"] == "assets/images/branding/logomark-on-light.svg"
+    assert loaded["theme"]["favicon"] == "assets/images/branding/favicon.svg"
+    assert loaded["theme"]["palette"] == [{"scheme": "default"}]
     assert loaded["use_directory_urls"] is True
     assert bool(loaded["plugins"]) is search
     subprocess.run([sys.executable, "-m", "mkdocs", "build", "--clean", "--config-file", str(config)], check=True)
     rendered = (site / "pub" / "new" / "page" / "index.html").read_text(encoding="utf-8")
     assert "Page" in rendered and "View source" in rendered
+    assert "logomark-on-light.svg" in rendered
+    assert "favicon.svg" in rendered
+    assert "favicon-96x96.png" in rendered
+    assert "favicon.ico" in rendered
+    assert "apple-touch-icon.png" in rendered
+    assert "site.webmanifest" in rendered
+    assert 'href="/assets/' not in rendered
     publication_landing = (site / "pub" / "index.html").read_text(encoding="utf-8")
     assert 'href="new/page/"' in publication_landing
     assert 'href="new/page/index.html"' not in publication_landing
     landing = (site / "index.html").read_text(encoding="utf-8")
     assert "Australia documentation" in landing and "Publication" in landing
+    assert "logomark-on-light.svg" in landing and "site.webmanifest" in landing
     assert "independent community mirror" in rendered
     assert "assets/javascripts/versions.js" in rendered
     assert "Image omitted" in rendered and "Diagram &amp; details" in rendered
     placeholder = (site / "pub" / "nav-only" / "index.html").read_text(encoding="utf-8")
     assert "Upstream document unavailable" in placeholder
     assert (site / "search" / "search_index.json").exists() is search
+    branding = site / "assets" / "images" / "branding"
+    expected_assets = {
+        "apple-touch-icon.png",
+        "favicon-96x96.png",
+        "favicon.ico",
+        "favicon.svg",
+        "logomark-on-light.svg",
+        "site.webmanifest",
+        "web-app-manifest-192x192.png",
+        "web-app-manifest-512x512.png",
+    }
+    assert {path.name for path in branding.iterdir()} == expected_assets
+    webmanifest = json.loads((branding / "site.webmanifest").read_text(encoding="utf-8"))
+    assert [icon["src"] for icon in webmanifest["icons"]] == [
+        "web-app-manifest-192x192.png",
+        "web-app-manifest-512x512.png",
+    ]
+    assert all(not icon["src"].startswith("/") for icon in webmanifest["icons"])
     assert not (work / "site").exists()
     assert report["counts"]["navigation_links"] == {
         "exact": 0,
