@@ -53,10 +53,14 @@ def test_fixture_builds_with_material_theme(tmp_path, search):
     )
     loaded = yaml.safe_load(config.read_text(encoding="utf-8"))
     assert "navigation.prune" in loaded["theme"]["features"]
+    assert loaded["use_directory_urls"] is True
     assert bool(loaded["plugins"]) is search
     subprocess.run([sys.executable, "-m", "mkdocs", "build", "--clean", "--config-file", str(config)], check=True)
     rendered = (site / "pub" / "new" / "page" / "index.html").read_text(encoding="utf-8")
     assert "Page" in rendered and "View source" in rendered
+    publication_landing = (site / "pub" / "index.html").read_text(encoding="utf-8")
+    assert 'href="new/page/"' in publication_landing
+    assert 'href="new/page/index.html"' not in publication_landing
     landing = (site / "index.html").read_text(encoding="utf-8")
     assert "Australia documentation" in landing and "Publication" in landing
     assert "independent community mirror" in rendered

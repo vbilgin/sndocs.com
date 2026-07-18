@@ -18,7 +18,7 @@ Build `sndocs.com`, an independent community documentation mirror generated from
 - `artifacts.py` validates the assembled site and creates ZIP/TAR archives with SHA-256 checksums.
 - `.github/workflows/build-site.yml` runs scheduled or manual builds and publishes the rolling `site-artifact` GitHub Release when inputs change.
 
-The public CLI is `sndocs` with `discover`, `build`, `validate`, and `package` commands. `discover` and `build` accept `--source-repo`, `--clone-source`, and explicit `--refresh-source` inputs for fast offline testing; `build --smoke` strictly renders only the newest family without search.
+The `sndocs` CLI provides discovery, build, validation, packaging, and local HTTP preview. Discovery and builds support reusable local sources; smoke builds render only the newest family without search.
 
 ## Important invariants and decisions
 
@@ -35,6 +35,7 @@ The public CLI is `sndocs` with `discover`, `build`, `validate`, and `package` c
 - Source prose is preserved with light enrichment rather than editorial restructuring.
 - Upstream media is not restored because ServiceNowDocs intentionally omits it.
 - Generated Markdown and HTML stay out of the main branch.
+- Topics use host-agnostic directory URLs (`/topic/` backed by `topic/index.html`); preview them over HTTP.
 - Mirrored content retains ServiceNow attribution and its Apache-2.0 license notice; the site clearly states that it is independent and unaffiliated.
 
 ## Artifact contract

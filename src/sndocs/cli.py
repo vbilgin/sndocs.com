@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import functools
+import http.server
 import json
 import shutil
 import subprocess
@@ -39,6 +41,10 @@ def parser() -> argparse.ArgumentParser:
     package.add_argument("--site", type=Path, required=True)
     package.add_argument("--destination", type=Path, required=True)
     commands.add_parser("validate", help="validate the default ./site output").add_argument("--site", type=Path, default=Path("site"))
+    serve = commands.add_parser("serve", help="preview a built site with clean directory URLs")
+    serve.add_argument("--site", type=Path, default=Path("site"))
+    serve.add_argument("--bind", default="127.0.0.1", help="address to bind (default: 127.0.0.1)")
+    serve.add_argument("--port", type=int, default=8000, help="port to bind (default: 8000)")
     return result
 
 
@@ -114,6 +120,25 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "validate":
         validate_site(args.site.resolve())
         print("site validation passed")
+        return 0
+    if args.command == "serve":
+        site = args.site.resolve()
+        if not site.is_dir():
+            argument_parser.error(
+                f"site directory does not exist: {site}; build it first or pass --site PATH"
+            )
+        handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(site))
+        server = http.server.ThreadingHTTPServer((args.bind, args.port), handler)
+        host, port = server.server_address[:2]
+        display_host = args.bind if args.bind else host
+        print(f"Previewing {site} at http://{display_host}:{port}/")
+        print("Press Ctrl-C to stop.")
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            print("\nPreview stopped.")
+        finally:
+            server.server_close()
         return 0
     return 2
 

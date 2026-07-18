@@ -2,6 +2,31 @@
 
 Reverse-chronological record of significant project work. This is a historical index, not the source of truth for implementation details; consult `.agent/CONTEXT.md`, ADRs, the current code, tests, and Git history as appropriate.
 
+## 2026-07-18 — Preserve clean URLs and add local preview
+
+- **Work performed by:** Codex, with direction from Victor Bilgin
+- **Committed by:** Victor Bilgin
+- **Commit:** `Add clean URL preview server` (intended subject)
+
+### Outcome
+
+Made the clean directory-URL contract explicit and added a supported local HTTP preview workflow so generated navigation resolves topic index pages without exposing `index.html` in URLs.
+
+### Changes and decisions
+
+- Explicitly enabled MkDocs directory URLs and retained `/topic/` as the host-agnostic public URL form.
+- Added `sndocs serve` with site, bind-address, and port options, missing-directory diagnostics, and graceful interruption handling using only the Python standard library.
+- Documented why `file://` browsing cannot resolve directory indexes and recorded the CLI and URL policy in ADR-0012.
+
+### Verification
+
+- Full test suite passed with 59 tests and one filesystem-specific skip; Python compilation and `git diff --check` also passed.
+- The retained Australia build served successfully through `sndocs serve`; `/australia/better-together/using-ham-for-esg/` returned HTTP 200 and interruption closed the server cleanly.
+
+### Follow-up
+
+- Use the preview command for browser evaluation of the retained Australia production build.
+
 ## 2026-07-17 — Normalize upstream strict-validation defects
 
 - **Work performed by:** Codex, with direction from Victor Bilgin

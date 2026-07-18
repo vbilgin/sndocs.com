@@ -68,6 +68,18 @@ release family. Material navigation prunes inactive branches from each page so t
 hierarchy does not multiply the generated HTML size. Use `upstream.families` in `pipeline.toml` to
 restrict other local experiments to named families.
 
+Preview any completed build through the local web server:
+
+```shell
+.venv/bin/sndocs serve --site site-australia
+```
+
+Then open `http://127.0.0.1:8000/`. The generated site uses clean directory URLs such as
+`/australia/better-together/using-ham-for-esg/`; the corresponding file on disk is
+`using-ham-for-esg/index.html`. Opening the output through `file://` is not supported because the
+filesystem protocol does not serve a directory's `index.html` automatically. Use `--bind` or
+`--port` to override the preview server defaults.
+
 ## Output contract
 
 The assembled site contains:

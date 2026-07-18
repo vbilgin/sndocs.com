@@ -119,6 +119,7 @@ def write_mkdocs_config(
         "site_name": f"{settings.site_name} — {family.title()}",
         "site_description": settings.site_description,
         "site_url": f"{settings.site_url}/{family}/" if settings.site_url else "",
+        "use_directory_urls": True,
         "docs_dir": str(work / "docs"),
         "site_dir": str(site_dir or work / "site"),
         "theme": {

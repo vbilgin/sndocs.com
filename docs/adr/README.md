@@ -22,5 +22,6 @@ Accepted ADRs are immutable except for corrections and explicit supersession met
 - [ADR-0009: Resolve stale links using canonical metadata before overrides](0009-canonical-metadata-link-resolution.md)
 - [ADR-0010: Bound build workspaces and distinguish smoke output](0010-bound-build-workspaces-and-smoke-profile.md)
 - [ADR-0011: Normalize deterministic upstream validation defects before strict builds](0011-normalize-upstream-validation-defects.md)
+- [ADR-0012: Preserve clean directory URLs and provide local HTTP preview](0012-clean-directory-urls-and-local-preview.md)
 - [ADR-0005: Publish host-agnostic rolling release artifacts](0005-host-agnostic-release-artifacts.md)
 - [ADR-0006: Maintain layered repository context for agents and contributors](0006-layered-project-context.md)

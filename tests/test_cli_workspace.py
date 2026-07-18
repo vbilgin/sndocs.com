@@ -77,3 +77,75 @@ def test_explicit_workspace_is_preserved(tmp_path, monkeypatch):
     ])
 
     assert (work / "marker").read_text(encoding="utf-8") == "preserved"
+
+
+def test_serve_defaults_and_graceful_shutdown(tmp_path, monkeypatch, capsys):
+    config = write_config(tmp_path)
+    site = tmp_path / "site"
+    site.mkdir()
+    observed = {}
+
+    class FakeServer:
+        server_address = ("127.0.0.1", 8000)
+
+        def __init__(self, address, handler):
+            observed["address"] = address
+            observed["handler"] = handler
+
+        def serve_forever(self):
+            raise KeyboardInterrupt
+
+        def server_close(self):
+            observed["closed"] = True
+
+    monkeypatch.setattr(cli.http.server, "ThreadingHTTPServer", FakeServer)
+
+    assert cli.main(["--config", str(config), "serve", "--site", str(site)]) == 0
+
+    assert observed["address"] == ("127.0.0.1", 8000)
+    assert observed["handler"].keywords["directory"] == str(site.resolve())
+    assert observed["closed"] is True
+    output = capsys.readouterr().out
+    assert "http://127.0.0.1:8000/" in output
+    assert "Preview stopped." in output
+
+
+def test_serve_accepts_bind_and_port_overrides(tmp_path, monkeypatch):
+    config = write_config(tmp_path)
+    site = tmp_path / "built-site"
+    site.mkdir()
+    observed = {}
+
+    class FakeServer:
+        server_address = ("localhost", 4321)
+
+        def __init__(self, address, _handler):
+            observed["address"] = address
+
+        def serve_forever(self):
+            raise KeyboardInterrupt
+
+        def server_close(self):
+            pass
+
+    monkeypatch.setattr(cli.http.server, "ThreadingHTTPServer", FakeServer)
+
+    cli.main([
+        "--config", str(config), "serve", "--site", str(site),
+        "--bind", "localhost", "--port", "4321",
+    ])
+
+    assert observed["address"] == ("localhost", 4321)
+
+
+def test_serve_rejects_missing_site(tmp_path, capsys):
+    config = write_config(tmp_path)
+
+    with pytest.raises(SystemExit, match="2"):
+        cli.main([
+            "--config", str(config), "serve", "--site", str(tmp_path / "missing")
+        ])
+
+    error = capsys.readouterr().err
+    assert "site directory does not exist" in error
+    assert "build it first or pass --site PATH" in error
