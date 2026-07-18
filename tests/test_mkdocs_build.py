@@ -27,7 +27,10 @@ def test_fixture_builds_with_material_theme(tmp_path, search):
     publication.joinpath("new").mkdir()
     publication.joinpath("new/page.md").write_text(
         "---\ntitle: Page\nrelease: australia\n---\n# Page\n\n"
-        "![Diagram & details](../image/missing.png)\n",
+        "![Diagram & details](../image/missing.png)\n\n"
+        "```text\nfirst line\n    indented line\n```\n\n"
+        "<textarea>first line\n    indented line</textarea>\n\n"
+        "<script>\n  window.fixtureValue = 1 + 2;\n</script>\n",
         encoding="utf-8",
     )
     settings = Settings(root, "sndocs.com", "https://sndocs.com", "Mirror", "ServiceNow/ServiceNowDocs", "llms.txt", (), "sndocs-site")
@@ -58,10 +61,16 @@ def test_fixture_builds_with_material_theme(tmp_path, search):
     assert loaded["theme"]["favicon"] == "assets/images/branding/favicon.svg"
     assert loaded["theme"]["palette"] == [{"scheme": "default"}]
     assert loaded["use_directory_urls"] is True
-    assert bool(loaded["plugins"]) is search
+    plugin_names = [plugin if isinstance(plugin, str) else next(iter(plugin)) for plugin in loaded["plugins"]]
+    assert ("search" in plugin_names) is search
+    assert plugin_names[-1] == "minify_html"
+    assert loaded["plugins"][-1] == {"minify_html": {"minify_css": False, "minify_js": False}}
     subprocess.run([sys.executable, "-m", "mkdocs", "build", "--clean", "--config-file", str(config)], check=True)
     rendered = (site / "pub" / "new" / "page" / "index.html").read_text(encoding="utf-8")
     assert "Page" in rendered and "View source" in rendered
+    assert "\n\n" not in rendered
+    assert "first line\n    indented line" in rendered
+    assert "<script>window.fixtureValue = 1 + 2;</script>" in rendered
     assert "logomark-on-light.svg" in rendered
     assert "favicon.svg" in rendered
     assert "favicon-96x96.png" in rendered
@@ -70,14 +79,14 @@ def test_fixture_builds_with_material_theme(tmp_path, search):
     assert "site.webmanifest" in rendered
     assert 'href="/assets/' not in rendered
     publication_landing = (site / "pub" / "index.html").read_text(encoding="utf-8")
-    assert 'href="new/page/"' in publication_landing
-    assert 'href="new/page/index.html"' not in publication_landing
+    assert "href=new/page/" in publication_landing
+    assert "new/page/index.html" not in publication_landing
     landing = (site / "index.html").read_text(encoding="utf-8")
     assert "Australia documentation" in landing and "Publication" in landing
     assert "logomark-on-light.svg" in landing and "site.webmanifest" in landing
     assert "independent community mirror" in rendered
     assert "assets/javascripts/versions.js" in rendered
-    assert "Image omitted" in rendered and "Diagram &amp; details" in rendered
+    assert "Image omitted" in rendered and "Diagram & details" in rendered
     placeholder = (site / "pub" / "nav-only" / "index.html").read_text(encoding="utf-8")
     assert "Upstream document unavailable" in placeholder
     assert (site / "search" / "search_index.json").exists() is search

@@ -11,7 +11,9 @@ requires-python = ">=3.11"
 license = { file = "LICENSE" }
 dependencies = [
   "mkdocs-material>=9.6,<10",
+  "mkdocs-minify-html-plugin>=0.3.11,<0.4",
   "PyYAML>=6.0,<7",
+  "typing-extensions>=4.12,<5; python_version < '3.12'",
 ]
 
 [project.optional-dependencies]
@@ -26,4 +28,3 @@ packages = ["src/sndocs"]
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
-

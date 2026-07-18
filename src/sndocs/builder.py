@@ -130,7 +130,10 @@ def write_mkdocs_config(
             "favicon": "assets/images/branding/favicon.svg",
             "palette": [{"scheme": "default"}],
         },
-        "plugins": [{"search": {"lang": "en"}}] if search else [],
+        "plugins": [
+            *([{"search": {"lang": "en"}}] if search else []),
+            {"minify_html": {"minify_css": False, "minify_js": False}},
+        ],
         "markdown_extensions": ["admonition", "attr_list", "tables", "toc", "pymdownx.details", "pymdownx.superfences"],
         "extra_css": ["assets/stylesheets/extra.css"],
         "extra_javascript": ["assets/javascripts/versions.js"],

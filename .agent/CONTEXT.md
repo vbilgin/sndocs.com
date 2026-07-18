@@ -58,13 +58,11 @@ Packaging produces `sndocs-site.tar.gz`, `sndocs-site.zip`, and SHA-256 files fo
 - Stale same-family links are repaired and genuinely missing targets receive placeholders.
 - Incremental and archived builds retain link-resolution reports.
 - Production navigation prunes inactive branches, family sites no longer have a duplicate temporary copy, and local source archives stream during extraction.
-- The test suite currently reports 56 passing tests and one filesystem-specific skip on case-insensitive macOS.
-- Live discovery previously confirmed Australia, Zurich, Yokohama, and Xanadu branches.
+- The test suite currently reports 59 passing tests and one filesystem-specific skip on case-insensitive macOS.
 - Australia SHA `71f4936` now passes a zero-warning render-free audit and a strict production build with 488 repaired navigation references, 67 missing navigation occurrences represented by placeholders, and 6 omitted-image occurrences across 3 targets.
-- The validated Australia family tree is 4,327,910,259 bytes (4.03 GiB), including a 238,443,879-byte (227.4 MiB) search directory; it builds in roughly five minutes locally.
+- Production and smoke builds minify HTML while leaving inline JavaScript and CSS untouched. A strict Australia rebuild rendered in 253 seconds and reduced the tree from 4,333,444,164 to 2,321,729,890 bytes (46.4%), including an unchanged 238,443,879-byte search directory.
 - Australia production packaging has also been validated locally; retained `site-australia/` and `artifacts-australia/` outputs are ignored for inspection.
 - Every family now receives a generated Material landing page at its manifest route, and artifact validation rejects missing family roots or unrewritten current-family raw Markdown links.
-- Durable architectural decisions are recorded under `docs/adr/`.
 - Repository-wide agent operating and context-maintenance instructions are established in root `AGENTS.md`.
 
 ## Known gaps and risks
