@@ -4,7 +4,7 @@
 - **Date:** 2026-07-17
 - **Decision owner:** Victor Bilgin
 - **Supersedes:** [ADR-0004](0004-stale-link-resolution.md)
-- **Related commit:** Pending
+- **Related commit:** `142924d` — `Allow narrowly scoped overrides for ambiguous stale links`
 
 ## Context
 

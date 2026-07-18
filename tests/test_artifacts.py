@@ -3,6 +3,8 @@ import json
 import tarfile
 import zipfile
 
+import pytest
+
 from sndocs.artifacts import package_site
 
 
@@ -23,3 +25,14 @@ def test_archives_have_identical_trees_and_valid_checksums(tmp_path):
         assert sorted(tar.getnames()) == sorted(archive.namelist())
     for archive, checksum in ((tar_path, outputs[2]), (zip_path, outputs[3])):
         assert checksum.read_text().split()[0] == hashlib.sha256(archive.read_bytes()).hexdigest()
+
+
+def test_smoke_build_cannot_be_packaged(tmp_path):
+    site = tmp_path / "site"
+    site.mkdir()
+    (site / "build-manifest.json").write_text(
+        json.dumps({"build_profile": "smoke"}), encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="smoke builds cannot be packaged"):
+        package_site(site, tmp_path / "out", "sndocs-site")

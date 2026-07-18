@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-07-16
 - **Decision owner:** Victor Bilgin
+- **Related commit:** `0a78be3` — `docs: establish layered project context and agent guidance`
 
 ## Context
 

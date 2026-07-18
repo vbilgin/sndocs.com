@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -51,20 +53,57 @@ def publication_nav(source: Path, discovery: Discovery) -> list[dict]:
     return nav
 
 
-def write_mkdocs_config(settings: Settings, source: Path, work: Path, family: str, discovery: Discovery) -> Path:
+def _format_size(size: int) -> str:
+    value = float(size)
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if value < 1024 or unit == "TiB":
+            return f"{value:.1f} {unit}"
+        value /= 1024
+    raise AssertionError("unreachable")
+
+
+def _tree_size(root: Path) -> int:
+    return sum(path.stat().st_size for path in root.rglob("*") if path.is_file())
+
+
+def _phase(family: str, name: str, started: float, path: Path) -> None:
+    print(
+        f"Build [{family}] {name}: {time.monotonic() - started:.1f}s, "
+        f"{_format_size(_tree_size(path))}"
+    )
+
+
+def write_mkdocs_config(
+    settings: Settings,
+    source: Path,
+    work: Path,
+    family: str,
+    discovery: Discovery,
+    site_dir: Path | None = None,
+    search: bool = True,
+) -> Path:
+    features = [
+        "navigation.indexes",
+        "navigation.prune",
+        "navigation.top",
+        "navigation.footer",
+        "content.code.copy",
+    ]
+    if search:
+        features.append("search.suggest")
     config = {
         "site_name": f"{settings.site_name} — {family.title()}",
         "site_description": settings.site_description,
         "site_url": f"{settings.site_url}/{family}/" if settings.site_url else "",
         "docs_dir": str(work / "docs"),
-        "site_dir": str(work / "site"),
+        "site_dir": str(site_dir or work / "site"),
         "theme": {
             "name": "material",
             "custom_dir": str(settings.root / "src" / "sndocs" / "theme"),
-            "features": ["navigation.indexes", "navigation.top", "navigation.footer", "search.suggest", "content.code.copy"],
+            "features": features,
             "palette": [{"scheme": "default", "primary": "blue grey", "accent": "teal"}],
         },
-        "plugins": [{"search": {"lang": "en"}}],
+        "plugins": [{"search": {"lang": "en"}}] if search else [],
         "markdown_extensions": ["admonition", "attr_list", "tables", "toc", "pymdownx.details", "pymdownx.superfences"],
         "extra_css": ["assets/stylesheets/extra.css"],
         "extra_javascript": ["assets/javascripts/versions.js"],
@@ -79,19 +118,47 @@ def write_mkdocs_config(settings: Settings, source: Path, work: Path, family: st
 
 def build_family(
     settings: Settings, discovery: Discovery, family: str, work_root: Path, output: Path,
-    source_repository: SourceRepository,
+    source_repository: SourceRepository, search: bool = True,
 ) -> dict:
     work = work_root / family
     source = work / "source"
+    started = time.monotonic()
+    print(f"Build [{family}] materializing source")
     source_repository.materialize(settings, family, discovery.shas[family], source)
+    _phase(family, "source ready", started, source)
     docs = work / "docs"
+    started = time.monotonic()
+    print(f"Build [{family}] transforming Markdown")
     link_report = transform_tree(
         source / "markdown", docs, family, set(discovery.families), settings.repository
     )
-    config = write_mkdocs_config(settings, source, work, family, discovery)
+    _phase(family, "Markdown ready", started, docs)
+    family_output = output / family
+    config = write_mkdocs_config(
+        settings,
+        source,
+        work,
+        family,
+        discovery,
+        site_dir=family_output,
+        search=search,
+    )
+    started = time.monotonic()
+    print(f"Build [{family}] rendering MkDocs site ({'search enabled' if search else 'search disabled'})")
     subprocess.run([sys.executable, "-m", "mkdocs", "build", "--clean", "--config-file", str(config)], check=True)
-    shutil.copytree(work / "site", output / family, dirs_exist_ok=True)
+    _phase(family, "site ready", started, family_output)
     return link_report
+
+
+def copy_reused_family(source: Path, destination: Path) -> str:
+    try:
+        shutil.copytree(source, destination, copy_function=os.link)
+        return "hard-linked"
+    except OSError:
+        if destination.exists():
+            shutil.rmtree(destination)
+        shutil.copytree(source, destination)
+        return "copied"
 
 
 def read_link_reports(site: Path | None) -> dict[str, dict]:
@@ -116,14 +183,28 @@ def empty_link_report(family: str) -> dict:
 def build_site(
     settings: Settings, output: Path, work: Path, previous_site: Path | None = None,
     source_repository: SourceRepository | None = None, discovery_result: Discovery | None = None,
+    *, build_profile: str = "production", cleanup_work: bool = False,
 ) -> tuple[dict, bool]:
+    if build_profile not in {"production", "smoke"}:
+        raise ValueError(f"unsupported build profile: {build_profile}")
     source_repository = source_repository or RemoteSource()
     discovery = discovery_result or discover(settings, source_repository)
+    if build_profile == "smoke":
+        discovery = Discovery(
+            families=[discovery.latest],
+            latest=discovery.latest,
+            publications=discovery.publications,
+            shas={discovery.latest: discovery.shas[discovery.latest]},
+        )
     previous = read_manifest(previous_site)
     previous_link_reports = read_link_reports(previous_site)
     fingerprint = pipeline_fingerprint(settings.root)
     previous_families = previous.get("families", {})
-    force_all = previous.get("pipeline_fingerprint") != fingerprint
+    previous_profile = previous.get("build_profile", "production")
+    force_all = (
+        previous.get("pipeline_fingerprint") != fingerprint
+        or previous_profile != build_profile
+    )
     changed = force_all or previous.get("latest") != discovery.latest
     output.mkdir(parents=True, exist_ok=True)
     family_records: dict[str, dict] = {}
@@ -134,12 +215,24 @@ def build_site(
         old = previous_families.get(family, {})
         can_reuse = not force_all and old.get("source_sha") == sha and previous_site and (previous_site / family).is_dir()
         if can_reuse:
-            shutil.copytree(previous_site / family, output / family, dirs_exist_ok=True)
+            method = copy_reused_family(previous_site / family, output / family)
+            print(f"Build [{family}] reused previous output ({method})")
             family_link_reports[family] = previous_link_reports.get(family, empty_link_report(family))
         else:
-            family_link_reports[family] = build_family(
-                settings, discovery, family, work, output, source_repository
-            )
+            try:
+                family_link_reports[family] = build_family(
+                    settings,
+                    discovery,
+                    family,
+                    work,
+                    output,
+                    source_repository,
+                    search=build_profile == "production",
+                )
+            finally:
+                if cleanup_work and (work / family).exists():
+                    shutil.rmtree(work / family)
+                    print(f"Build [{family}] workspace removed")
             changed = True
         family_records[family] = {
             "source_sha": sha,
@@ -148,10 +241,12 @@ def build_site(
             "link_counts": family_link_reports[family]["counts"],
         }
 
-    for family, record in previous_families.items():
+    archived_families = previous_families.items() if build_profile == "production" else ()
+    for family, record in archived_families:
         if family in family_records or not previous_site or not (previous_site / family).is_dir():
             continue
-        shutil.copytree(previous_site / family, output / family, dirs_exist_ok=True)
+        method = copy_reused_family(previous_site / family, output / family)
+        print(f"Build [{family}] retained archived output ({method})")
         family_link_reports[family] = previous_link_reports.get(family, empty_link_report(family))
         family_records[family] = {
             **record,
@@ -198,6 +293,7 @@ limitations under the License.
         "pipeline_fingerprint": fingerprint,
         "built_at": datetime.now(timezone.utc).isoformat(),
         "upstream_repository": settings.repository,
+        "build_profile": build_profile,
         "latest": discovery.latest,
         "families": family_records,
     }

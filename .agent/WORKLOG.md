@@ -2,6 +2,35 @@
 
 Reverse-chronological record of significant project work. This is a historical index, not the source of truth for implementation details; consult `.agent/CONTEXT.md`, ADRs, the current code, tests, and Git history as appropriate.
 
+## 2026-07-17 — Bound build storage and add a smoke profile
+
+- **Work performed by:** Codex, with direction from Victor Bilgin
+- **Committed by:** Victor Bilgin
+- **Commit:** `Optimize build storage and add smoke mode` (intended subject)
+
+### Outcome
+
+Reworked family build staging so temporary storage no longer accumulates source, transformed Markdown, and duplicate generated sites across all release families; added an explicit strict smoke profile for quick local testing.
+
+### Changes and decisions
+
+- Moved automatic workspaces under ignored `.temp/`, cleaned each completed family workspace, preserved explicit diagnostic work directories, and printed phase timing, size, reuse, and cleanup progress.
+- Enabled Material navigation pruning, rendered MkDocs directly into final family outputs, and reused unchanged family trees with hard links plus a portable copy fallback.
+- Streamed local `git archive` extraction instead of buffering the complete archive in memory.
+- Added `build --smoke` for newest-family strict builds without search, recorded the profile in manifests, isolated incremental reuse by profile, and rejected smoke packaging.
+- Recorded the workspace lifecycle and smoke artifact contract in ADR-0010.
+
+### Verification
+
+- Full test suite: 52 passed, 1 filesystem-specific skip; strict fixture builds passed with production search enabled and smoke search disabled.
+- CLI help inspection, Python compilation, and `git diff --check` passed.
+- An Australia production attempt measured 7.6 seconds and 256.6 MiB for source materialization, 61.1 seconds and 259.2 MiB for transformation, a 698 MiB peak automatic workspace on disk, 4.1 GiB of generated output, and a 227 MiB search directory.
+- The measured build correctly removed its automatic workspace but MkDocs strict mode rejected 494 pre-existing upstream navigation, missing-image, and stale-anchor warnings, so no complete artifact or four-family build was attempted; the invalid 4.1 GiB measurement output was removed afterward.
+
+### Follow-up
+
+- Resolve or deterministically represent the Australia strict warnings before treating the 4.1 GiB generated tree as a valid artifact or attempting the complete multi-family build.
+
 ## 2026-07-17 — Resolve stale links using canonical metadata
 
 - **Work performed by:** Codex, with direction from Victor Bilgin

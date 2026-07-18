@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-07-17
 - **Decision owner:** Victor Bilgin
-- **Related commit:** Pending
+- **Related commit:** `49f4ae1` — `Add reusable local upstream source support`
 
 ## Context
 

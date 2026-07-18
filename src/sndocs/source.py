@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import io
 import re
 import subprocess
 import tarfile
@@ -127,17 +126,22 @@ class LocalSource:
 
     def materialize(self, settings: Settings, family: str, sha: str, destination: Path) -> None:
         destination.mkdir(parents=True, exist_ok=False)
-        archive = subprocess.run(
+        with subprocess.Popen(
             ["git", "-C", str(self.path), "archive", "--format=tar", sha],
-            check=True,
-            capture_output=True,
-        ).stdout
-        with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as stream:
-            for member in stream.getmembers():
-                path = PurePosixPath(member.name)
-                if path.is_absolute() or ".." in path.parts:
-                    raise ValueError(f"unsafe path in source archive: {member.name}")
-            stream.extractall(destination)
+            stdout=subprocess.PIPE,
+        ) as archive:
+            if archive.stdout is None:
+                raise RuntimeError("git archive did not provide an output stream")
+            with tarfile.open(fileobj=archive.stdout, mode="r|") as stream:
+                for member in stream:
+                    path = PurePosixPath(member.name)
+                    if path.is_absolute() or ".." in path.parts:
+                        raise ValueError(f"unsafe path in source archive: {member.name}")
+                    stream.extract(member, destination)
+            archive.stdout.close()
+            returncode = archive.wait()
+            if returncode:
+                raise subprocess.CalledProcessError(returncode, archive.args)
 
 
 def clone_local_source(path: Path, settings: Settings) -> LocalSource:

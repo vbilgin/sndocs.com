@@ -14,11 +14,11 @@ Build `sndocs.com`, an independent community documentation mirror generated from
 - `navigation.py` converts publication `index.md` hierarchies into MkDocs navigation.
 - `transform.py` tolerates malformed YAML frontmatter, enriches pages, rewrites links, renders omitted-image notices, and creates placeholders for unavailable content.
 - `links.py` repairs stale same-family links using exact paths, unique basenames, same-publication disambiguation, self-canonical metadata, and narrowly scoped reviewed fallback overrides; unresolved ambiguity is fatal.
-- `builder.py` builds families independently, reuses unchanged output, retains removed families as archives, and assembles manifests and version metadata.
+- `builder.py` builds families independently with pruned navigation, writes directly to final family outputs, cleans automatic per-family work, hard-links reusable output when possible, retains removed families as archives, and assembles manifests and version metadata.
 - `artifacts.py` validates the assembled site and creates ZIP/TAR archives with SHA-256 checksums.
 - `.github/workflows/build-site.yml` runs scheduled or manual builds and publishes the rolling `site-artifact` GitHub Release when inputs change.
 
-The public CLI is `sndocs` with `discover`, `build`, `validate`, and `package` commands. `discover` and `build` accept `--source-repo`, `--clone-source`, and explicit `--refresh-source` inputs for fast offline testing.
+The public CLI is `sndocs` with `discover`, `build`, `validate`, and `package` commands. `discover` and `build` accept `--source-repo`, `--clone-source`, and explicit `--refresh-source` inputs for fast offline testing; `build --smoke` strictly renders only the newest family without search.
 
 ## Important invariants and decisions
 
@@ -30,6 +30,8 @@ The public CLI is `sndocs` with `discover`, `build`, `validate`, and `package` c
 - Missing upstream targets receive clearly marked diagnostic placeholder pages.
 - Cross-family moved-link resolution is intentionally not attempted.
 - MkDocs strict mode remains enabled; ambiguity and pipeline-created broken links fail.
+- Production builds include every selected family and search; smoke manifests are distinct, omit search, and cannot be packaged.
+- Automatic workspaces live under ignored `.temp/`, are bounded to one family's source/transformed Markdown, and are cleaned automatically; explicit `--work-dir` content is preserved.
 - Source prose is preserved with light enrichment rather than editorial restructuring.
 - Upstream media is not restored because ServiceNowDocs intentionally omits it.
 - Generated Markdown and HTML stay out of the main branch.
@@ -42,7 +44,7 @@ The assembled site contains:
 - one directory for each current or archived family;
 - `index.html` redirecting to the newest family;
 - `versions.json` for the release selector;
-- `build-manifest.json` with source SHAs, archive state, pipeline fingerprint, and link counts;
+- `build-manifest.json` with source SHAs, archive state, build profile, pipeline fingerprint, and link counts;
 - `link-report.json` with per-family link repairs and missing-document placeholders; and
 - `SERVICENOW-LICENSE.txt`.
 
@@ -54,24 +56,26 @@ Packaging produces `sndocs-site.tar.gz`, `sndocs-site.zip`, and SHA-256 files fo
 - Malformed upstream YAML containing unquoted colons is handled with a conservative field-level fallback parser.
 - Stale same-family links are repaired and genuinely missing targets receive placeholders.
 - Incremental and archived builds retain link-resolution reports.
-- The test suite currently reports 32 passing tests and one filesystem-specific skip on case-insensitive macOS.
+- Production navigation prunes inactive branches, family sites no longer have a duplicate temporary copy, and local source archives stream during extraction.
+- The test suite currently reports 52 passing tests and one filesystem-specific skip on case-insensitive macOS.
 - Live discovery previously confirmed Australia, Zurich, Yokohama, and Xanadu branches.
+- A measured Australia production attempt bounded the automatic workspace at 698 MiB on disk and generated 4.1 GiB of HTML with a 227 MiB search directory before strict validation rejected 494 upstream navigation, missing-image, and stale-anchor warnings.
 - Durable architectural decisions are recorded under `docs/adr/`.
 - Repository-wide agent operating and context-maintenance instructions are established in root `AGENTS.md`.
 
 ## Known gaps and risks
 
-- A complete multi-family build has not been validated end to end after adding stale-link repair and placeholder generation.
+- A complete family build remains blocked by 494 strict MkDocs warnings from malformed/missing navigation targets, omitted image links, and stale anchors in the Australia upstream snapshot.
 - GitHub Actions publication to the rolling Release has not yet been proven in production.
-- Full families are large (Australia contained roughly 49,000 Markdown files), making local clones, builds, and browser-side search indexes potentially expensive.
-- Navigation usability, generated artifact size, and Material search performance still need evaluation against a complete site.
+- Full families remain large (Australia contains roughly 49,000 Markdown files and generated 4.1 GiB before strict failure), making final artifacts and browser-side search expensive despite bounded temporary storage.
+- Navigation usability and Material search performance still need browser evaluation against a successful complete site.
 - Cross-family links can still become stale when equivalent topics move between directories in different release branches.
 
 ## Next likely work
 
-1. Complete a clean build of every current family and inspect all strict-build diagnostics.
-2. Validate `link-report.json`, placeholder pages, version switching, navigation, and search against the resulting site.
-3. Measure build time, artifact size, and browser search performance.
+1. Reconcile Australia's deterministic upstream navigation, missing-image, and stale-anchor warnings with strict-build policy.
+2. Complete a clean Australia build, then validate `link-report.json`, placeholders, version switching, navigation, and search.
+3. Attempt the complete multi-family build and measure final artifact and browser search performance.
 4. Exercise the GitHub Actions workflow and verify rolling Release reuse and publication.
 
 ## Development and verification

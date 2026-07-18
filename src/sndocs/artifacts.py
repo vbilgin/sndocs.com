@@ -36,6 +36,9 @@ def _files(site: Path):
 
 
 def package_site(site: Path, destination: Path, basename: str) -> list[Path]:
+    manifest = json.loads((site / "build-manifest.json").read_text(encoding="utf-8"))
+    if manifest.get("build_profile", "production") != "production":
+        raise ValueError("smoke builds cannot be packaged as production artifacts")
     validate_site(site)
     destination.mkdir(parents=True, exist_ok=True)
     tar_path = destination / f"{basename}.tar.gz"

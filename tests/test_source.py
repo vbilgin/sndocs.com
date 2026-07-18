@@ -76,12 +76,32 @@ def test_local_discovery_and_materialization_are_offline(local_clone, tmp_path):
     assert run("status", "--porcelain=v2", "--branch", cwd=repository) == before
 
 
+def test_local_materialization_streams_git_archive(local_clone, tmp_path, monkeypatch):
+    repository, configured, shas = local_clone
+    source = LocalSource(repository, configured)
+    original_popen = source_module.subprocess.Popen
+    calls = []
+
+    def recording_popen(arguments, *args, **kwargs):
+        calls.append(arguments)
+        return original_popen(arguments, *args, **kwargs)
+
+    monkeypatch.setattr(source_module.subprocess, "Popen", recording_popen)
+    destination = tmp_path / "export"
+    source.materialize(configured, "australia", shas["australia"], destination)
+
+    assert calls == [[
+        "git", "-C", str(repository.resolve()), "archive", "--format=tar", shas["australia"]
+    ]]
+    assert (destination / "markdown" / "test" / "index.md").exists()
+
+
 def test_local_build_manifest_and_incremental_reuse_use_commit_shas(local_clone, tmp_path, monkeypatch):
     repository, configured, shas = local_clone
     source = LocalSource(repository, configured)
     result = discover(configured, source)
 
-    def fake_build(_settings, _discovery, family, _work, output, _source):
+    def fake_build(_settings, _discovery, family, _work, output, _source, **_kwargs):
         family_output = output / family
         family_output.mkdir(parents=True)
         (family_output / "index.html").write_text("ok")

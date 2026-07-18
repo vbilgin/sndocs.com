@@ -25,6 +25,11 @@ def parser() -> argparse.ArgumentParser:
     build.add_argument("--work-dir", type=Path)
     build.add_argument("--previous-site", type=Path)
     build.add_argument("--github-output", type=Path)
+    build.add_argument(
+        "--smoke",
+        action="store_true",
+        help="build only the newest family without search indexing",
+    )
     for command in (discover_command, build):
         sources = command.add_mutually_exclusive_group()
         sources.add_argument("--source-repo", type=Path, help="use an existing local upstream clone")
@@ -60,18 +65,40 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "build":
         output = args.output.resolve()
         previous_site = args.previous_site.resolve() if args.previous_site else None
+        build_profile = "smoke" if args.smoke else "production"
         if output.exists():
             shutil.rmtree(output)
         if args.work_dir:
             args.work_dir.mkdir(parents=True, exist_ok=True)
             manifest, changed = build_site(
-                settings, output, args.work_dir.resolve(), previous_site, source_repository, discovery_result
+                settings,
+                output,
+                args.work_dir.resolve(),
+                previous_site,
+                source_repository,
+                discovery_result,
+                build_profile=build_profile,
             )
         else:
-            with tempfile.TemporaryDirectory(prefix="sndocs-") as temporary:
-                manifest, changed = build_site(
-                    settings, output, Path(temporary), previous_site, source_repository, discovery_result
-                )
+            temporary_root = settings.root / ".temp"
+            temporary_root.mkdir(parents=True, exist_ok=True)
+            temporary = None
+            try:
+                with tempfile.TemporaryDirectory(prefix="sndocs-", dir=temporary_root) as temporary:
+                    print(f"Automatic workspace: {temporary}")
+                    manifest, changed = build_site(
+                        settings,
+                        output,
+                        Path(temporary),
+                        previous_site,
+                        source_repository,
+                        discovery_result,
+                        build_profile=build_profile,
+                        cleanup_work=True,
+                    )
+            finally:
+                if temporary:
+                    print(f"Automatic workspace removed: {temporary}")
         if args.github_output:
             with args.github_output.open("a", encoding="utf-8") as stream:
                 stream.write(f"changed={'true' if changed else 'false'}\n")

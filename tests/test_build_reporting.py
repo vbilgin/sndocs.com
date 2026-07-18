@@ -1,6 +1,8 @@
 import json
+import errno
 
 from sndocs import builder
+from sndocs.artifacts import validate_site
 from sndocs.models import Discovery, Settings
 
 
@@ -30,7 +32,7 @@ def test_fresh_build_writes_report_and_manifest_counts(tmp_path, monkeypatch):
 
     monkeypatch.setattr(builder, "discover", lambda _settings, _source: discovery)
 
-    def fake_build(_settings, _discovery, family, _work, output, _source):
+    def fake_build(_settings, _discovery, family, _work, output, _source, **_kwargs):
         family_output = output / family
         family_output.mkdir(parents=True)
         (family_output / "index.html").write_text("ok", encoding="utf-8")
@@ -89,3 +91,69 @@ def test_pipeline_fingerprint_ignores_python_bytecode(tmp_path):
     before = builder.pipeline_fingerprint(tmp_path)
     (cache / "module.pyc").write_bytes(b"different")
     assert builder.pipeline_fingerprint(tmp_path) == before
+
+
+def test_smoke_build_selects_latest_disables_search_and_cleans_family_work(tmp_path, monkeypatch):
+    configured = settings_for(tmp_path)
+    discovery = Discovery(
+        ["australia", "zurich"],
+        "australia",
+        [],
+        {"australia": "new", "zurich": "old"},
+    )
+    calls = []
+
+    def fake_build(_settings, selected, family, work, output, _source, *, search):
+        calls.append((selected.families, family, search))
+        (work / family).mkdir(parents=True)
+        family_output = output / family
+        family_output.mkdir(parents=True)
+        (family_output / "index.html").write_text("ok", encoding="utf-8")
+        return builder.empty_link_report(family)
+
+    monkeypatch.setattr(builder, "build_family", fake_build)
+    output = tmp_path / "site"
+    work = tmp_path / "work"
+    manifest, _ = builder.build_site(
+        configured,
+        output,
+        work,
+        discovery_result=discovery,
+        build_profile="smoke",
+        cleanup_work=True,
+    )
+
+    assert calls == [(["australia"], "australia", False)]
+    assert manifest["build_profile"] == "smoke"
+    assert list(manifest["families"]) == ["australia"]
+    assert not (work / "australia").exists()
+    validate_site(output)
+
+
+def test_reused_family_prefers_hard_links(tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    original = source / "index.html"
+    original.write_text("ok", encoding="utf-8")
+    destination = tmp_path / "destination"
+
+    method = builder.copy_reused_family(source, destination)
+
+    assert method == "hard-linked"
+    assert (destination / "index.html").stat().st_ino == original.stat().st_ino
+
+
+def test_reused_family_falls_back_to_copy(tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "index.html").write_text("ok", encoding="utf-8")
+    destination = tmp_path / "destination"
+
+    def cross_device_link(_source, _destination):
+        raise OSError(errno.EXDEV, "cross-device link")
+
+    monkeypatch.setattr(builder.os, "link", cross_device_link)
+    method = builder.copy_reused_family(source, destination)
+
+    assert method == "copied"
+    assert (destination / "index.html").read_text(encoding="utf-8") == "ok"

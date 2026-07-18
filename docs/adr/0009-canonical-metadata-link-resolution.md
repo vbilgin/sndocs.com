@@ -4,7 +4,7 @@
 - **Date:** 2026-07-17
 - **Decision owner:** Victor Bilgin
 - **Supersedes:** [ADR-0007](0007-explicit-stale-link-overrides.md)
-- **Related commit:** Pending
+- **Related commit:** `33abe28` — `Resolve stale links using canonical metadata`
 
 ## Context
 

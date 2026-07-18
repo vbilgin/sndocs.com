@@ -50,8 +50,23 @@ Build a complete site, optionally reusing a previously unpacked artifact:
 .venv/bin/sndocs package --site site --destination artifacts
 ```
 
-The build may be large: all Markdown in every current release family is rendered and indexed.
-Use `upstream.families` in `pipeline.toml` to restrict local experiments to named families.
+Automatic build workspaces are created below the ignored `.temp/` directory and removed as each
+family finishes. Supply a fresh `--work-dir` path to preserve source snapshots, transformed
+Markdown, and MkDocs configuration for diagnostics; preserved workspaces can be large and are not
+cleaned automatically.
+
+Use smoke mode for a fast, strict local check of the newest family without search indexing:
+
+```shell
+.venv/bin/sndocs build --output site-smoke --source-repo ../ServiceNowDocs --smoke
+.venv/bin/sndocs validate --site site-smoke
+```
+
+Smoke manifests are marked with `build_profile: smoke` and cannot be packaged as production
+artifacts. Production remains the default: it renders and indexes all Markdown in every current
+release family. Material navigation prunes inactive branches from each page so the full navigation
+hierarchy does not multiply the generated HTML size. Use `upstream.families` in `pipeline.toml` to
+restrict other local experiments to named families.
 
 ## Output contract
 
@@ -60,7 +75,7 @@ The assembled site contains:
 - `index.html`, redirecting to the newest current family;
 - `versions.json`, consumed by the Material release selector;
 - `link-report.json`, recording repaired links and generated missing-document placeholders;
-- `build-manifest.json`, containing upstream SHAs, archive states, timestamps, and the pipeline fingerprint;
+- `build-manifest.json`, containing the build profile, upstream SHAs, archive states, timestamps, and the pipeline fingerprint;
 - `SERVICENOW-LICENSE.txt`, retaining upstream attribution and license information; and
 - one directory per current or retained archived family.
 
