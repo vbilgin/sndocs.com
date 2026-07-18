@@ -8,6 +8,7 @@ dist/
 site/
 work/
 artifacts/
+local/
 previous-site/
 site-australia/
 artifacts-australia/
