@@ -12,6 +12,8 @@ def validate_site(site: Path) -> None:
     manifest = json.loads((site / "build-manifest.json").read_text(encoding="utf-8"))
     versions = json.loads((site / "versions.json").read_text(encoding="utf-8"))
     link_report = json.loads((site / "link-report.json").read_text(encoding="utf-8"))
+    if link_report.get("schema_version") != 2:
+        raise ValueError("link-report.json must use schema version 2")
     if versions["latest"] != manifest["latest"]:
         raise ValueError("manifest and versions.json disagree about the latest family")
     for family in manifest["families"]:
@@ -23,6 +25,9 @@ def validate_site(site: Path) -> None:
         expected_counts = manifest["families"][family].get("link_counts")
         if expected_counts is not None and expected_counts != reported.get("counts"):
             raise ValueError(f"family {family} link counts disagree between manifest and report")
+        counts = reported.get("counts", {})
+        if not {"document_links", "navigation_links", "placeholders", "omitted_images"} <= counts.keys():
+            raise ValueError(f"family {family} has an incomplete schema-v2 link report")
     current_families = set(manifest["families"])
     raw_link = re.compile(r"raw\.githubusercontent\.com/ServiceNow/ServiceNowDocs/([^/]+)/markdown/")
     for html_file in site.rglob("*.html"):

@@ -2,6 +2,36 @@
 
 Reverse-chronological record of significant project work. This is a historical index, not the source of truth for implementation details; consult `.agent/CONTEXT.md`, ADRs, the current code, tests, and Git history as appropriate.
 
+## 2026-07-17 — Normalize upstream strict-validation defects
+
+- **Work performed by:** Codex, with direction from Victor Bilgin
+- **Committed by:** Victor Bilgin
+- **Commit:** `Normalize upstream validation defects` (intended subject)
+
+### Outcome
+
+Made the Australia source snapshot pass strict MkDocs rendering and artifact validation without suppressing warnings or fabricating missing content or media.
+
+### Changes and decisions
+
+- Shared the deterministic family resolver between document links and publication navigation, retained fatal ambiguity, and finalized placeholders after both reference passes.
+- Converted 6 conventional references to 3 absent PNG targets into accessible omitted-image notices while leaving Markdown-looking text inside raw HTML containers unchanged.
+- Published typed document, navigation, placeholder, and omitted-image audit data in `link-report.json` schema version 2 and converted retained schema-version-1 archived reports during assembly.
+- Added a generated Material landing page for each family, tightened raw-link rewriting when an upstream URL is both link label and destination, and strengthened artifact schema and raw-link validation.
+- Recorded the policy in ADR-0011 and kept stale-anchor validation at MkDocs' informational default.
+
+### Verification
+
+- Full test suite, Python compilation, and `git diff --check` passed.
+- A render-free Australia audit at `71f4936517ebd1fbaf76c5515c40b8d12bc6dd5c` reported zero warnings and zero unrewritten current-family raw links; 20 stale anchors remained informational.
+- A strict Australia production build with search completed and passed artifact validation in 310.5 seconds. It produced 220,021 exact, 15,207 repaired, and 271 missing document-link occurrences; 58,280 exact, 488 repaired, and 67 missing navigation occurrences; 98 placeholders; and 6 omitted images across 3 targets.
+- The validated Australia family tree measured 4,327,910,259 bytes (4.03 GiB), including 238,443,879 bytes (227.4 MiB) of search data; the temporary tree was removed after measurement.
+- Victor independently validated the retained Australia production build and packaged artifacts locally; `site-australia/` and `artifacts-australia/` are ignored for continued local inspection.
+
+### Follow-up
+
+- Evaluate the successful Australia site in a browser before attempting and packaging the complete four-family build.
+
 ## 2026-07-17 — Bound build storage and add a smoke profile
 
 - **Work performed by:** Codex, with direction from Victor Bilgin
@@ -25,7 +55,7 @@ Reworked family build staging so temporary storage no longer accumulates source,
 - Full test suite: 52 passed, 1 filesystem-specific skip; strict fixture builds passed with production search enabled and smoke search disabled.
 - CLI help inspection, Python compilation, and `git diff --check` passed.
 - An Australia production attempt measured 7.6 seconds and 256.6 MiB for source materialization, 61.1 seconds and 259.2 MiB for transformation, a 698 MiB peak automatic workspace on disk, 4.1 GiB of generated output, and a 227 MiB search directory.
-- The measured build correctly removed its automatic workspace but MkDocs strict mode rejected 494 pre-existing upstream navigation, missing-image, and stale-anchor warnings, so no complete artifact or four-family build was attempted; the invalid 4.1 GiB measurement output was removed afterward.
+- The measured build correctly removed its automatic workspace but MkDocs strict mode rejected 494 pre-existing upstream warnings: 488 stale navigation references and 6 missing-image references. Stale anchors were separate informational diagnostics, so no complete artifact or four-family build was attempted; the invalid 4.1 GiB measurement output was removed afterward.
 
 ### Follow-up
 

@@ -74,10 +74,10 @@ The assembled site contains:
 
 - `index.html`, redirecting to the newest current family;
 - `versions.json`, consumed by the Material release selector;
-- `link-report.json`, recording repaired links and generated missing-document placeholders;
+- schema-version-2 `link-report.json`, recording typed document and navigation repairs, generated missing-document placeholders, and omitted-image occurrences;
 - `build-manifest.json`, containing the build profile, upstream SHAs, archive states, timestamps, and the pipeline fingerprint;
 - `SERVICENOW-LICENSE.txt`, retaining upstream attribution and license information; and
-- one directory per current or retained archived family.
+- one directory per current or retained archived family, with a generated Material landing page at the family root.
 
 Packaging creates `sndocs-site.tar.gz`, `sndocs-site.zip`, and a SHA-256 file for each archive.
 The scheduled GitHub Actions workflow refreshes a rolling `site-artifact` GitHub Release only

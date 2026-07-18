@@ -8,16 +8,17 @@ import subprocess
 import sys
 import time
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import yaml
 
 from . import __version__
 from .discovery import discover
+from .links import FamilyLinkResolver
 from .models import Discovery, Settings
 from .navigation import parse_index
 from .source import RemoteSource, SourceRepository
-from .transform import transform_tree
+from .transform import transform_tree, write_missing_placeholders
 
 MANIFEST_NAME = "build-manifest.json"
 LINK_REPORT_NAME = "link-report.json"
@@ -41,16 +42,38 @@ def read_manifest(site: Path | None) -> dict:
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
 
-def publication_nav(source: Path, discovery: Discovery) -> list[dict]:
+def publication_nav(
+    source: Path, discovery: Discovery, resolver: FamilyLinkResolver | None = None
+) -> list[dict]:
     nav: list[dict] = []
     for publication in discovery.publications:
         index = source / "markdown" / publication.slug / "index.md"
         if not index.exists():
             continue
-        children = parse_index(index.read_text(encoding="utf-8", errors="replace"))
+        children = parse_index(
+            index.read_text(encoding="utf-8", errors="replace"),
+            resolver,
+            referring_index=PurePosixPath(publication.slug) / "index.md" if resolver else None,
+        )
         items: list = [f"{publication.slug}/index.md", *children]
         nav.append({publication.name: items})
     return nav
+
+
+def write_family_landing(docs: Path, family: str, discovery: Discovery) -> None:
+    publications = []
+    for publication in discovery.publications:
+        if (docs / publication.slug / "index.md").exists():
+            title = publication.name.replace("[", "\\[").replace("]", "\\]")
+            publications.append(f"- [{title}]({publication.slug}/index.md)")
+    content = (
+        f"---\ntitle: {family.title()} documentation\nrelease: {family}\n---\n\n"
+        f"# {family.title()} documentation\n\n"
+        "Select a publication:\n\n"
+        + "\n".join(publications)
+        + "\n"
+    )
+    (docs / "index.md").write_text(content, encoding="utf-8")
 
 
 def _format_size(size: int) -> str:
@@ -81,6 +104,7 @@ def write_mkdocs_config(
     discovery: Discovery,
     site_dir: Path | None = None,
     search: bool = True,
+    nav: list[dict] | None = None,
 ) -> Path:
     features = [
         "navigation.indexes",
@@ -107,7 +131,7 @@ def write_mkdocs_config(
         "markdown_extensions": ["admonition", "attr_list", "tables", "toc", "pymdownx.details", "pymdownx.superfences"],
         "extra_css": ["assets/stylesheets/extra.css"],
         "extra_javascript": ["assets/javascripts/versions.js"],
-        "nav": publication_nav(source, discovery),
+        "nav": nav if nav is not None else publication_nav(source, discovery),
         "copyright": "Independent community mirror. ServiceNow content used under Apache-2.0.",
         "strict": True,
     }
@@ -127,11 +151,22 @@ def build_family(
     source_repository.materialize(settings, family, discovery.shas[family], source)
     _phase(family, "source ready", started, source)
     docs = work / "docs"
+    resolver = FamilyLinkResolver(source / "markdown", family)
     started = time.monotonic()
     print(f"Build [{family}] transforming Markdown")
-    link_report = transform_tree(
-        source / "markdown", docs, family, set(discovery.families), settings.repository
+    transform_tree(
+        source / "markdown",
+        docs,
+        family,
+        set(discovery.families),
+        settings.repository,
+        resolver,
+        finalize=False,
     )
+    nav = publication_nav(source, discovery, resolver)
+    write_missing_placeholders(docs, resolver)
+    write_family_landing(docs, family, discovery)
+    link_report = resolver.report()
     _phase(family, "Markdown ready", started, docs)
     family_output = output / family
     config = write_mkdocs_config(
@@ -142,6 +177,7 @@ def build_family(
         discovery,
         site_dir=family_output,
         search=search,
+        nav=nav,
     )
     started = time.monotonic()
     print(f"Build [{family}] rendering MkDocs site ({'search enabled' if search else 'search disabled'})")
@@ -168,15 +204,74 @@ def read_link_reports(site: Path | None) -> dict[str, dict]:
     if not path.exists():
         return {}
     data = json.loads(path.read_text(encoding="utf-8"))
-    return data.get("families", {})
+    return {
+        family: upgrade_link_report(report)
+        for family, report in data.get("families", {}).items()
+    }
+
+
+def empty_link_counts() -> dict:
+    return {
+        "document_links": {"exact": 0, "repaired": 0, "missing": 0, "ambiguous": 0},
+        "navigation_links": {"exact": 0, "repaired": 0, "missing": 0, "ambiguous": 0},
+        "placeholders": 0,
+        "omitted_images": {"occurrences": 0, "targets": 0},
+    }
+
+
+def upgrade_link_report(report: dict) -> dict:
+    counts = report.get("counts", {})
+    if "document_links" in counts:
+        return report
+    old_placeholders = report.get("placeholders", [])
+    placeholder_occurrences = sum(
+        len(item.get("referring_pages", [])) for item in old_placeholders
+    )
+    upgraded_placeholders = [
+        {
+            "target": item.get("target", ""),
+            "referrers": [
+                {"kind": "document", "path": path}
+                for path in item.get("referring_pages", [])
+            ],
+        }
+        for item in old_placeholders
+    ]
+    return {
+        "family": report.get("family", ""),
+        "counts": {
+            "document_links": {
+                "exact": counts.get("exact", 0),
+                "repaired": counts.get("repaired", 0),
+                "missing": placeholder_occurrences or counts.get("placeholder", 0),
+                "ambiguous": counts.get("ambiguous", 0),
+            },
+            "navigation_links": {
+                "exact": 0,
+                "repaired": 0,
+                "missing": 0,
+                "ambiguous": 0,
+            },
+            "placeholders": counts.get("placeholder", len(upgraded_placeholders)),
+            "omitted_images": {"occurrences": 0, "targets": 0},
+        },
+        "repairs": [
+            {"kind": "document", **repair}
+            for repair in report.get("repairs", [])
+        ],
+        "placeholders": upgraded_placeholders,
+        "omitted_images": [],
+        "legacy_schema": 1,
+    }
 
 
 def empty_link_report(family: str) -> dict:
     return {
         "family": family,
-        "counts": {"exact": 0, "repaired": 0, "placeholder": 0, "ambiguous": 0},
+        "counts": empty_link_counts(),
         "repairs": [],
         "placeholders": [],
+        "omitted_images": [],
     }
 
 
@@ -264,7 +359,7 @@ def build_site(
         ],
     }
     (output / "versions.json").write_text(json.dumps(versions, indent=2) + "\n", encoding="utf-8")
-    aggregate_link_report = {"schema_version": 1, "families": family_link_reports}
+    aggregate_link_report = {"schema_version": 2, "families": family_link_reports}
     (output / LINK_REPORT_NAME).write_text(
         json.dumps(aggregate_link_report, indent=2) + "\n", encoding="utf-8"
     )
@@ -300,8 +395,14 @@ limitations under the License.
     (output / MANIFEST_NAME).write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     for family, report in family_link_reports.items():
         counts = report["counts"]
+        documents = counts["document_links"]
+        navigation = counts["navigation_links"]
+        images = counts["omitted_images"]
         print(
-            f"Link resolution [{family}]: {counts['exact']} exact, {counts['repaired']} repaired, "
-            f"{counts['placeholder']} placeholders, {counts['ambiguous']} ambiguous"
+            f"Normalization [{family}]: documents {documents['exact']} exact, "
+            f"{documents['repaired']} repaired, {documents['missing']} missing; navigation "
+            f"{navigation['exact']} exact, {navigation['repaired']} repaired, "
+            f"{navigation['missing']} missing; {counts['placeholders']} placeholders; "
+            f"{images['occurrences']} omitted images ({images['targets']} targets)"
         )
     return manifest, changed

@@ -11,9 +11,9 @@ Build `sndocs.com`, an independent community documentation mirror generated from
 - `pipeline.toml` defines site identity, upstream repository, optional family allowlist, and artifact naming.
 - `discovery.py` parses upstream `llms.txt`, preserves its family/publication ordering, and resolves release-branch SHAs.
 - `source.py` provides remote and reusable-local source implementations; local sources discover and export exact family commits from clean remote-tracking refs without changing branches.
-- `navigation.py` converts publication `index.md` hierarchies into MkDocs navigation.
-- `transform.py` tolerates malformed YAML frontmatter, enriches pages, rewrites links, renders omitted-image notices, and creates placeholders for unavailable content.
-- `links.py` repairs stale same-family links using exact paths, unique basenames, same-publication disambiguation, self-canonical metadata, and narrowly scoped reviewed fallback overrides; unresolved ambiguity is fatal.
+- `navigation.py` converts publication `index.md` hierarchies into MkDocs navigation and resolves their targets through the shared family link resolver.
+- `transform.py` tolerates malformed YAML frontmatter, enriches pages, rewrites links, renders missing local images as omitted-image notices, and creates placeholders for unavailable content.
+- `links.py` repairs stale same-family document and navigation links using exact paths, unique basenames, same-publication disambiguation, self-canonical metadata, and narrowly scoped reviewed fallback overrides; unresolved ambiguity is fatal.
 - `builder.py` builds families independently with pruned navigation, writes directly to final family outputs, cleans automatic per-family work, hard-links reusable output when possible, retains removed families as archives, and assembles manifests and version metadata.
 - `artifacts.py` validates the assembled site and creates ZIP/TAR archives with SHA-256 checksums.
 - `.github/workflows/build-site.yml` runs scheduled or manual builds and publishes the rolling `site-artifact` GitHub Release when inputs change.
@@ -45,7 +45,7 @@ The assembled site contains:
 - `index.html` redirecting to the newest family;
 - `versions.json` for the release selector;
 - `build-manifest.json` with source SHAs, archive state, build profile, pipeline fingerprint, and link counts;
-- `link-report.json` with per-family link repairs and missing-document placeholders; and
+- schema-version-2 `link-report.json` with typed document/navigation repairs, missing-document placeholders, and omitted-image occurrences; and
 - `SERVICENOW-LICENSE.txt`.
 
 Packaging produces `sndocs-site.tar.gz`, `sndocs-site.zip`, and SHA-256 files for both.
@@ -57,26 +57,28 @@ Packaging produces `sndocs-site.tar.gz`, `sndocs-site.zip`, and SHA-256 files fo
 - Stale same-family links are repaired and genuinely missing targets receive placeholders.
 - Incremental and archived builds retain link-resolution reports.
 - Production navigation prunes inactive branches, family sites no longer have a duplicate temporary copy, and local source archives stream during extraction.
-- The test suite currently reports 52 passing tests and one filesystem-specific skip on case-insensitive macOS.
+- The test suite currently reports 56 passing tests and one filesystem-specific skip on case-insensitive macOS.
 - Live discovery previously confirmed Australia, Zurich, Yokohama, and Xanadu branches.
-- A measured Australia production attempt bounded the automatic workspace at 698 MiB on disk and generated 4.1 GiB of HTML with a 227 MiB search directory before strict validation rejected 494 upstream navigation, missing-image, and stale-anchor warnings.
+- Australia SHA `71f4936` now passes a zero-warning render-free audit and a strict production build with 488 repaired navigation references, 67 missing navigation occurrences represented by placeholders, and 6 omitted-image occurrences across 3 targets.
+- The validated Australia family tree is 4,327,910,259 bytes (4.03 GiB), including a 238,443,879-byte (227.4 MiB) search directory; it builds in roughly five minutes locally.
+- Australia production packaging has also been validated locally; retained `site-australia/` and `artifacts-australia/` outputs are ignored for inspection.
+- Every family now receives a generated Material landing page at its manifest route, and artifact validation rejects missing family roots or unrewritten current-family raw Markdown links.
 - Durable architectural decisions are recorded under `docs/adr/`.
 - Repository-wide agent operating and context-maintenance instructions are established in root `AGENTS.md`.
 
 ## Known gaps and risks
 
-- A complete family build remains blocked by 494 strict MkDocs warnings from malformed/missing navigation targets, omitted image links, and stale anchors in the Australia upstream snapshot.
 - GitHub Actions publication to the rolling Release has not yet been proven in production.
-- Full families remain large (Australia contains roughly 49,000 Markdown files and generated 4.1 GiB before strict failure), making final artifacts and browser-side search expensive despite bounded temporary storage.
+- Full families remain large (Australia alone contains roughly 49,000 Markdown files and generates 4.03 GiB), making complete artifacts and browser-side search expensive despite bounded temporary storage.
 - Navigation usability and Material search performance still need browser evaluation against a successful complete site.
+- Australia contains 20 stale-anchor diagnostics at MkDocs' informational level; anchor validation intentionally remains informational.
 - Cross-family links can still become stale when equivalent topics move between directories in different release branches.
 
 ## Next likely work
 
-1. Reconcile Australia's deterministic upstream navigation, missing-image, and stale-anchor warnings with strict-build policy.
-2. Complete a clean Australia build, then validate `link-report.json`, placeholders, version switching, navigation, and search.
-3. Attempt the complete multi-family build and measure final artifact and browser search performance.
-4. Exercise the GitHub Actions workflow and verify rolling Release reuse and publication.
+1. Inspect Australia's navigation, placeholder pages, release selector, and search behavior in a browser.
+2. Attempt the complete multi-family build and measure final artifact and browser search performance.
+3. Exercise the GitHub Actions workflow and verify rolling Release reuse and publication.
 
 ## Development and verification
 

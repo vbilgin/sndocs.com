@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 from urllib.parse import urlparse
 
+from .links import FamilyLinkResolver
+
 NAV_RE = re.compile(r"^(\s*)- \[([^]]+)]\(([^)]+)\)")
 
 
@@ -28,7 +30,11 @@ def source_path(url: str) -> str | None:
     return parsed.path.split(marker, 1)[1]
 
 
-def parse_index(text: str) -> list[dict]:
+def parse_index(
+    text: str,
+    resolver: FamilyLinkResolver | None = None,
+    referring_index: PurePosixPath | None = None,
+) -> list[dict]:
     roots: list[NavNode] = []
     stack: list[tuple[int, NavNode]] = []
     for line in text.splitlines():
@@ -39,6 +45,10 @@ def parse_index(text: str) -> list[dict]:
         path = source_path(url)
         if path is None or path.endswith("/index.md"):
             continue
+        if resolver is not None:
+            if referring_index is None:
+                raise ValueError("referring_index is required when resolving navigation")
+            path = str(resolver.resolve(path, referring_index, kind="navigation"))
         depth = len(indent.expandtabs(2)) // 2
         node = NavNode(title.strip(), str(PurePosixPath(path)))
         while stack and stack[-1][0] >= depth:
@@ -49,4 +59,3 @@ def parse_index(text: str) -> list[dict]:
             roots.append(node)
         stack.append((depth, node))
     return [node.mkdocs() for node in roots]
-

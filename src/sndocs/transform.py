@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import html
 import os
+import posixpath
 import re
+import shutil
 from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlparse
 
@@ -12,6 +14,22 @@ from .links import FamilyLinkResolver
 from .metadata import split_frontmatter
 
 OMITTED_IMAGE_RE = re.compile(r'\\?\[Omitted image\s+["“]([^"”]+)["”]\\?\](?:\s*Alt text:\s*([^\n]+))?')
+MARKDOWN_IMAGE_RE = re.compile(
+    r'!\[([^]]*)\]\(([^\s)]+)(?:\s+(?:"[^"]*"|\'[^\']*\'|\([^)]*\)))?\)'
+)
+RAW_HTML_CONTAINER_RE = re.compile(
+    r"<(table|div|details|figure|section|article|aside|nav|header|footer)\b[^>]*>.*?</\1\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _image_notice(filename: str, alt: str) -> str:
+    escaped_filename = html.escape(filename)
+    escaped_alt = html.escape(alt.strip() or "No alternative text supplied")
+    return (
+        '\n<div class="omitted-image" role="note"><strong>Image omitted:</strong> '
+        f'{escaped_filename}<br><span>{escaped_alt}</span></div>\n'
+    )
 
 
 def pretty_url(family: str, markdown_path: str, fragment: str = "") -> str:
@@ -32,7 +50,7 @@ def rewrite_links(
     resolver: FamilyLinkResolver | None = None,
 ) -> str:
     raw_link_re = re.compile(
-        rf"https://raw\.githubusercontent\.com/{re.escape(repository)}/([^/]+)/markdown/([^\s)]+\.md)(#[^\s)]*)?"
+        rf"https://raw\.githubusercontent\.com/{re.escape(repository)}/([^/]+)/markdown/([^\s)\]]+\.md)(#[^\s)]*)?"
     )
     def replace(match: re.Match) -> str:
         family, target, fragment = match.group(1), unquote(match.group(2)), match.group(3) or ""
@@ -47,13 +65,45 @@ def rewrite_links(
     return raw_link_re.sub(replace, body)
 
 
-def enrich_body(body: str, metadata: dict, family: str, source_url: str) -> str:
-    def image_notice(match: re.Match) -> str:
-        filename = html.escape(match.group(1))
-        alt = html.escape((match.group(2) or "No alternative text supplied").strip())
-        return f'\n<div class="omitted-image" role="note"><strong>Image omitted:</strong> {filename}<br><span>{alt}</span></div>\n'
+def rewrite_missing_images(
+    body: str,
+    current_path: PurePosixPath,
+    source_files: set[PurePosixPath] | None,
+    resolver: FamilyLinkResolver | None,
+) -> str:
+    if source_files is None:
+        return body
+    raw_html_spans = [match.span() for match in RAW_HTML_CONTAINER_RE.finditer(body)]
 
-    body = OMITTED_IMAGE_RE.sub(image_notice, body)
+    def replace(match: re.Match) -> str:
+        if any(start <= match.start() < end for start, end in raw_html_spans):
+            return match.group(0)
+        alt, raw_target = match.group(1), match.group(2)
+        parsed = urlparse(raw_target)
+        if parsed.scheme or parsed.netloc or raw_target.startswith(("/", "#")):
+            return match.group(0)
+        target_value = posixpath.normpath(
+            posixpath.join(current_path.parent.as_posix(), unquote(parsed.path))
+        )
+        if target_value == ".." or target_value.startswith("../"):
+            return match.group(0)
+        target = PurePosixPath(target_value)
+        if target in source_files:
+            return match.group(0)
+        if resolver is not None:
+            resolver.record_omitted_image(current_path, target, alt)
+        return _image_notice(target.name, alt)
+
+    return MARKDOWN_IMAGE_RE.sub(replace, body)
+
+
+def enrich_body(body: str, metadata: dict, family: str, source_url: str) -> str:
+    def replace_omitted_image(match: re.Match) -> str:
+        return _image_notice(
+            match.group(1), match.group(2) or "No alternative text supplied"
+        )
+
+    body = OMITTED_IMAGE_RE.sub(replace_omitted_image, body)
     breadcrumb = metadata.get("breadcrumb")
     crumbs = " › ".join(str(item) for item in breadcrumb) if isinstance(breadcrumb, list) else ""
     canonical = metadata.get("canonical_url")
@@ -78,12 +128,14 @@ def transform_document(
     source_url: str,
     repository: str = "ServiceNow/ServiceNowDocs",
     resolver: FamilyLinkResolver | None = None,
+    source_files: set[PurePosixPath] | None = None,
 ) -> str:
     metadata, body = split_frontmatter(text)
     if not body.strip():
         title = metadata.get("title") or relative_path.stem.replace("-", " ").title()
         body = f"# {title}\n\n!!! warning \"Source content unavailable\"\n    The upstream file is currently empty. This placeholder preserves incoming links.\n"
     body = rewrite_links(body, family, relative_path, families, repository, resolver)
+    body = rewrite_missing_images(body, relative_path, source_files, resolver)
     body = enrich_body(body, metadata, family, source_url)
     return "---\n" + yaml.safe_dump(metadata, sort_keys=False, allow_unicode=True).strip() + "\n---\n\n" + body
 
@@ -92,7 +144,10 @@ def _write_missing_placeholders(docs_dir: Path, resolver: FamilyLinkResolver) ->
     for missing_path, referrers in resolver.missing.items():
         target = docs_dir / Path(missing_path.as_posix())
         target.parent.mkdir(parents=True, exist_ok=True)
-        referring_list = "\n".join(f"- `{item}`" for item in sorted(referrers, key=str))
+        referring_list = "\n".join(
+            f"- {kind}: `{path}`"
+            for kind, path in sorted(referrers, key=lambda item: (item[0], str(item[1])))
+        )
         title = missing_path.stem.replace("-", " ").title()
         content = f'''---
 title: "[Unavailable] {title}"
@@ -113,10 +168,26 @@ release: {resolver.family}
         target.write_text(content, encoding="utf-8")
 
 
+def write_missing_placeholders(docs_dir: Path, resolver: FamilyLinkResolver) -> None:
+    _write_missing_placeholders(docs_dir, resolver)
+
+
 def transform_tree(
-    source_markdown: Path, docs_dir: Path, family: str, families: set[str], repository: str
+    source_markdown: Path,
+    docs_dir: Path,
+    family: str,
+    families: set[str],
+    repository: str,
+    resolver: FamilyLinkResolver | None = None,
+    *,
+    finalize: bool = True,
 ) -> dict:
-    resolver = FamilyLinkResolver(source_markdown, family)
+    resolver = resolver or FamilyLinkResolver(source_markdown, family)
+    source_files = {
+        PurePosixPath(path.relative_to(source_markdown).as_posix())
+        for path in source_markdown.rglob("*")
+        if path.is_file()
+    }
     destinations: dict[str, PurePosixPath] = {}
     for source in source_markdown.rglob("*.md"):
         relative = PurePosixPath(source.relative_to(source_markdown).as_posix())
@@ -129,8 +200,24 @@ def transform_tree(
         source_url = f"https://github.com/{repository}/blob/{family}/markdown/{relative.as_posix()}"
         text = source.read_text(encoding="utf-8", errors="replace")
         target.write_text(
-            transform_document(text, family, relative, families, source_url, repository, resolver),
+            transform_document(
+                text,
+                family,
+                relative,
+                families,
+                source_url,
+                repository,
+                resolver,
+                source_files,
+            ),
             encoding="utf-8",
         )
-    _write_missing_placeholders(docs_dir, resolver)
+    for relative in sorted(source_files, key=str):
+        if relative.suffix.casefold() == ".md":
+            continue
+        target = docs_dir / Path(relative.as_posix())
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_markdown / Path(relative.as_posix()), target)
+    if finalize:
+        _write_missing_placeholders(docs_dir, resolver)
     return resolver.report()

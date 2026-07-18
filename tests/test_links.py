@@ -28,7 +28,7 @@ def test_exact_target_is_unchanged(tmp_path):
     root = markdown_tree(tmp_path, ["pub/page.md"])
     resolver = FamilyLinkResolver(root, "australia")
     assert resolver.resolve("pub/page.md", PurePosixPath("other/source.md")) == PurePosixPath("pub/page.md")
-    assert resolver.report()["counts"]["exact"] == 1
+    assert resolver.report()["counts"]["document_links"]["exact"] == 1
 
 
 def test_unique_moved_target_is_repaired(tmp_path):
@@ -203,5 +203,9 @@ def test_missing_target_is_aggregated_by_referring_page(tmp_path):
     resolver.resolve("pub/missing.md", PurePosixPath("pub/source.md"))
     resolver.resolve("pub/missing.md", PurePosixPath("other/source.md"))
     report = resolver.report()
-    assert report["counts"]["placeholder"] == 1
-    assert report["placeholders"][0]["referring_pages"] == ["other/source.md", "pub/source.md"]
+    assert report["counts"]["placeholders"] == 1
+    assert report["counts"]["document_links"]["missing"] == 2
+    assert report["placeholders"][0]["referrers"] == [
+        {"kind": "document", "path": "other/source.md"},
+        {"kind": "document", "path": "pub/source.md"},
+    ]

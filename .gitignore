@@ -9,5 +9,6 @@ site/
 work/
 artifacts/
 previous-site/
-
+site-australia/
+artifacts-australia/
 .DS_Store

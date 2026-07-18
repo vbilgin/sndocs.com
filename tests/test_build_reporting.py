@@ -22,12 +22,15 @@ def settings_for(root):
 def test_fresh_build_writes_report_and_manifest_counts(tmp_path, monkeypatch):
     settings = settings_for(tmp_path)
     discovery = Discovery(["australia"], "australia", [], {"australia": "abc"})
-    counts = {"exact": 8, "repaired": 2, "placeholder": 1, "ambiguous": 0}
+    counts = builder.empty_link_counts()
+    counts["document_links"].update({"exact": 8, "repaired": 2, "missing": 1})
+    counts["placeholders"] = 1
     report = {
         "family": "australia",
         "counts": counts,
         "repairs": [],
         "placeholders": [],
+        "omitted_images": [],
     }
 
     monkeypatch.setattr(builder, "discover", lambda _settings, _source: discovery)
@@ -76,8 +79,67 @@ def test_incremental_build_reuses_previous_report(tmp_path, monkeypatch):
     manifest, changed = builder.build_site(settings, output, tmp_path / "work", previous)
 
     assert changed is False
-    assert manifest["families"]["australia"]["link_counts"] == counts
-    assert json.loads((output / "link-report.json").read_text())["families"]["australia"] == report
+    upgraded = json.loads((output / "link-report.json").read_text())["families"]["australia"]
+    assert manifest["families"]["australia"]["link_counts"] == upgraded["counts"]
+    assert upgraded["counts"]["document_links"]["exact"] == 4
+    assert upgraded["repairs"] == []
+    assert upgraded["legacy_schema"] == 1
+
+
+def test_archived_family_schema_one_report_is_upgraded(tmp_path, monkeypatch):
+    settings = settings_for(tmp_path)
+    discovery = Discovery(["australia"], "australia", [], {"australia": "new"})
+    previous = tmp_path / "previous"
+    (previous / "xanadu").mkdir(parents=True)
+    (previous / "xanadu" / "index.html").write_text("archived", encoding="utf-8")
+    (previous / "build-manifest.json").write_text(
+        json.dumps(
+            {
+                "pipeline_fingerprint": "old",
+                "latest": "xanadu",
+                "families": {"xanadu": {"source_sha": "old", "archived": False}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    legacy = {
+        "family": "xanadu",
+        "counts": {"exact": 3, "repaired": 1, "placeholder": 1, "ambiguous": 0},
+        "repairs": [],
+        "placeholders": [
+            {"target": "pub/missing.md", "referring_pages": ["pub/source.md"]}
+        ],
+    }
+    (previous / "link-report.json").write_text(
+        json.dumps({"schema_version": 1, "families": {"xanadu": legacy}}),
+        encoding="utf-8",
+    )
+
+    def fake_build(_settings, _discovery, family, _work, output, _source, **_kwargs):
+        family_output = output / family
+        family_output.mkdir(parents=True)
+        (family_output / "index.html").write_text("current", encoding="utf-8")
+        return builder.empty_link_report(family)
+
+    monkeypatch.setattr(builder, "build_family", fake_build)
+    output = tmp_path / "site"
+    manifest, _ = builder.build_site(
+        settings,
+        output,
+        tmp_path / "work",
+        previous,
+        discovery_result=discovery,
+    )
+
+    report = json.loads((output / "link-report.json").read_text())
+    archived = report["families"]["xanadu"]
+    assert report["schema_version"] == 2
+    assert archived["legacy_schema"] == 1
+    assert archived["counts"]["document_links"]["missing"] == 1
+    assert archived["placeholders"][0]["referrers"] == [
+        {"kind": "document", "path": "pub/source.md"}
+    ]
+    assert manifest["families"]["xanadu"]["archived"] is True
 
 
 def test_pipeline_fingerprint_ignores_python_bytecode(tmp_path):
