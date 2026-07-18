@@ -106,6 +106,7 @@ def write_mkdocs_config(
     search: bool = True,
     nav: list[dict] | None = None,
 ) -> Path:
+    build_year = datetime.now(timezone.utc).year
     features = [
         "navigation.indexes",
         "navigation.prune",
@@ -137,8 +138,12 @@ def write_mkdocs_config(
         "markdown_extensions": ["admonition", "attr_list", "tables", "toc", "pymdownx.details", "pymdownx.superfences"],
         "extra_css": ["assets/stylesheets/extra.css"],
         "extra_javascript": ["assets/javascripts/versions.js"],
+        "extra": {"servicenow_copyright_year": build_year},
         "nav": nav if nav is not None else publication_nav(source, discovery),
-        "copyright": "Independent community mirror. ServiceNow content used under Apache-2.0.",
+        "copyright": (
+            f"© {build_year} ServiceNow, Inc. All rights reserved. "
+            "ServiceNow content redistributed under Apache-2.0."
+        ),
         "strict": True,
     }
     path = work / "mkdocs.yml"

@@ -2,6 +2,26 @@
 
 Reverse-chronological record of significant project work. This is a historical index, not the source of truth for implementation details; consult `.agent/CONTEXT.md`, ADRs, the current code, tests, and Git history as appropriate.
 
+## 2026-07-18 — Strengthen ServiceNow attribution
+
+- **Work performed by:** Codex, with direction from Victor Bilgin
+- **Commit:** `Strengthen ServiceNow attribution` (intended subject)
+
+### Outcome
+
+Added ServiceNow's required trademark and build-year copyright notices to the README and generated site footer while preserving the independent-mirror disclaimer and Apache-2.0 attribution.
+
+### Changes and decisions
+
+- Derived the generated footer copyright year from the UTC family build time and retained archived-family immutability.
+- Added a footer link to the public `ServiceNow/ServiceNowDocs` repository and adjusted the footer presentation for the longer legal notices.
+- Added strict rendered-site coverage for the notices, year, license wording, disclaimer, and repository link.
+
+### Verification
+
+- Full test suite passed with 59 tests and one filesystem-specific skip; `git diff --check` passed.
+- The strict Material fixture rendered and verified the exact notices, UTC build year, preserved disclaimer, Apache-2.0 wording, and ServiceNowDocs repository link in both production and smoke configurations.
+
 ## 2026-07-18 — Minify generated family HTML
 
 - **Work performed by:** Codex, with direction from Victor Bilgin

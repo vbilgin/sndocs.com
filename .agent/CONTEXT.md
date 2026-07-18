@@ -36,7 +36,7 @@ The `sndocs` CLI provides discovery, build, validation, packaging, and local HTT
 - Upstream media is not restored because ServiceNowDocs intentionally omits it.
 - Generated Markdown and HTML stay out of the main branch.
 - Topics use host-agnostic directory URLs (`/topic/` backed by `topic/index.html`); preview them over HTTP.
-- Mirrored content retains ServiceNow attribution and its Apache-2.0 license notice; the site clearly states that it is independent and unaffiliated.
+- Mirrored content retains ServiceNow's required trademark notice, a UTC build-year copyright notice, and its Apache-2.0 license notice; the site clearly states that it is independent and unaffiliated and links to the public ServiceNowDocs source repository.
 
 ## Artifact contract
 

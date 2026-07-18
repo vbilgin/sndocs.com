@@ -106,3 +106,11 @@ Edit `pipeline.toml` to set the site identity, canonical site URL, upstream repo
 Pipeline code is available under the repository's MIT license. Mirrored documentation remains
 copyright ServiceNow and is redistributed under the upstream Apache License 2.0. Every generated
 page links to its upstream source and, when provided, its official canonical documentation page.
+
+© 2026 ServiceNow, Inc. All rights reserved.
+
+ServiceNow, the ServiceNow logo, Now, and other ServiceNow marks are trademarks and/or registered
+trademarks of ServiceNow, Inc., in the United States and/or other countries. Other company and
+product names may be trademarks of the respective companies with which they are associated.
+
+sndocs.com is an independent community mirror and is not affiliated with or endorsed by ServiceNow.

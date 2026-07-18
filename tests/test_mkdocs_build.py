@@ -1,6 +1,7 @@
 import json
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -61,6 +62,7 @@ def test_fixture_builds_with_material_theme(tmp_path, search):
     assert loaded["theme"]["favicon"] == "assets/images/branding/favicon.svg"
     assert loaded["theme"]["palette"] == [{"scheme": "default"}]
     assert loaded["use_directory_urls"] is True
+    assert loaded["extra"]["servicenow_copyright_year"] == datetime.now(timezone.utc).year
     plugin_names = [plugin if isinstance(plugin, str) else next(iter(plugin)) for plugin in loaded["plugins"]]
     assert ("search" in plugin_names) is search
     assert plugin_names[-1] == "minify_html"
@@ -85,6 +87,16 @@ def test_fixture_builds_with_material_theme(tmp_path, search):
     assert "Australia documentation" in landing and "Publication" in landing
     assert "logomark-on-light.svg" in landing and "site.webmanifest" in landing
     assert "independent community mirror" in rendered
+    assert (
+        "ServiceNow, the ServiceNow logo, Now, and other ServiceNow marks are trademarks and/or "
+        "registered trademarks of ServiceNow, Inc., in the United States and/or other countries. "
+        "Other company and product names may be trademarks of the respective companies with which "
+        "they are associated."
+    ) in rendered
+    assert f"© {loaded['extra']['servicenow_copyright_year']} ServiceNow, Inc. All rights reserved." in rendered
+    assert "Documentation content is redistributed under the Apache License 2.0" in rendered
+    assert 'href=https://github.com/ServiceNow/ServiceNowDocs' in rendered
+    assert ">ServiceNowDocs repository</a>" in rendered
     assert "assets/javascripts/versions.js" in rendered
     assert "Image omitted" in rendered and "Diagram & details" in rendered
     placeholder = (site / "pub" / "nav-only" / "index.html").read_text(encoding="utf-8")

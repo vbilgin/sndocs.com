@@ -55,5 +55,8 @@
 .breadcrumbs { margin-bottom: .25rem; opacity: .8; }
 .omitted-image { margin: 1rem 0; padding: .8rem 1rem; border: 1px dashed var(--md-default-fg-color--lighter); border-radius: .2rem; color: var(--md-default-fg-color--light); }
 .site-disclaimer { font-size: .65rem; max-width: 60rem; margin: .7rem auto; padding: 0 .8rem; opacity: .8; }
+.site-disclaimer p { margin: .35rem 0; }
+.site-disclaimer a { color: inherit; text-decoration: underline; text-underline-offset: .12em; }
+.site-disclaimer a:is(:focus, :hover) { color: #faf7f2; opacity: 1; }
 .family-selector { max-width: 10rem; margin-left: .6rem; padding: .25rem; border: 1px solid rgb(38 38 38 / 45%); border-radius: .15rem; color: #262626; background: #faf7f2; }
 .family-selector:focus-visible { border-color: #6a4cff; outline: .15rem solid #6a4cff; outline-offset: .1rem; }
