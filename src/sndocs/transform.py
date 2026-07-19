@@ -21,6 +21,18 @@ RAW_HTML_CONTAINER_RE = re.compile(
     r"<(table|div|details|figure|section|article|aside|nav|header|footer)\b[^>]*>.*?</\1\s*>",
     re.IGNORECASE | re.DOTALL,
 )
+NAV_CARD_TABLE_RE = re.compile(
+    r'<table\b(?=[^>]*\bclass\s*=\s*["\'][^"\']*\bnav-card\b[^"\']*["\'])(?P<attrs>[^>]*)>'
+    r"(?P<body>.*?)</table\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
+NAV_CARD_CELL_RE = re.compile(r"<td\b[^>]*>(.*?)</td\s*>", re.IGNORECASE | re.DOTALL)
+NAV_CARD_LINK_RE = re.compile(
+    r'^\s*\[(?P<title>.*?)\\?\[Omitted image\s+["“](?P<image>[^"”]+)["”]\\?\]'
+    r'\s*Alt text:\s*(?P<description>.*?)\]\((?P<target>[^\s)]+)\)\s*$',
+    re.IGNORECASE | re.DOTALL,
+)
+HTML_ID_RE = re.compile(r'\bid\s*=\s*(["\'])(?P<value>.*?)\1', re.IGNORECASE | re.DOTALL)
 
 
 def _image_notice(filename: str, alt: str) -> str:
@@ -63,6 +75,53 @@ def rewrite_links(
         relative = os.path.relpath(target, start=current_path.parent.as_posix())
         return PurePosixPath(relative).as_posix() + fragment
     return raw_link_re.sub(replace, body)
+
+
+def _navigation_card_url(target: str, current_path: PurePosixPath) -> str:
+    parsed = urlparse(html.unescape(target))
+    if parsed.scheme or parsed.netloc or target.startswith(("/", "#")) or not parsed.path.endswith(".md"):
+        return target
+    source_target = PurePosixPath(
+        posixpath.normpath(posixpath.join(current_path.parent.as_posix(), unquote(parsed.path)))
+    )
+    current_rendered = current_path.parent if current_path.name == "index.md" else current_path.with_suffix("")
+    target_rendered = source_target.parent if source_target.name == "index.md" else source_target.with_suffix("")
+    relative = posixpath.relpath(target_rendered.as_posix(), start=current_rendered.as_posix())
+    rendered = "./" if relative == "." else relative.rstrip("/") + "/"
+    return rendered + (f"?{parsed.query}" if parsed.query else "") + (f"#{parsed.fragment}" if parsed.fragment else "")
+
+
+def transform_navigation_cards(body: str, current_path: PurePosixPath) -> str:
+    """Convert recognized upstream navigation tables into semantic linked cards."""
+
+    def replace_table(match: re.Match) -> str:
+        cards: list[str] = []
+        for raw_cell in NAV_CARD_CELL_RE.findall(match.group("body")):
+            visible_cell = html.unescape(re.sub(r"<[^>]+>", "", raw_cell)).strip()
+            if not visible_cell:
+                continue
+            card = NAV_CARD_LINK_RE.fullmatch(raw_cell)
+            if card is None:
+                return match.group(0)
+            title = html.escape(card.group("title").strip())
+            description = html.escape(card.group("description").strip())
+            target = html.escape(
+                _navigation_card_url(card.group("target"), current_path), quote=True
+            )
+            cards.append(
+                f'<a class="nav-card__item" href="{target}">'
+                f'<strong class="nav-card__title">{title}</strong>'
+                f'<span class="nav-card__description">{description}</span></a>'
+            )
+        if not cards:
+            return match.group(0)
+        id_match = HTML_ID_RE.search(match.group("attrs"))
+        identifier = (
+            f' id="{html.escape(id_match.group("value"), quote=True)}"' if id_match else ""
+        )
+        return f'\n<div class="nav-card-grid"{identifier}>\n' + "\n".join(cards) + "\n</div>\n"
+
+    return NAV_CARD_TABLE_RE.sub(replace_table, body)
 
 
 def rewrite_missing_images(
@@ -135,6 +194,7 @@ def transform_document(
         title = metadata.get("title") or relative_path.stem.replace("-", " ").title()
         body = f"# {title}\n\n!!! warning \"Source content unavailable\"\n    The upstream file is currently empty. This placeholder preserves incoming links.\n"
     body = rewrite_links(body, family, relative_path, families, repository, resolver)
+    body = transform_navigation_cards(body, relative_path)
     body = rewrite_missing_images(body, relative_path, source_files, resolver)
     body = enrich_body(body, metadata, family, source_url)
     return "---\n" + yaml.safe_dump(metadata, sort_keys=False, allow_unicode=True).strip() + "\n---\n\n" + body

@@ -2,6 +2,27 @@
 
 Reverse-chronological record of significant project work. This is a historical index, not the source of truth for implementation details; consult `.agent/CONTEXT.md`, ADRs, the current code, tests, and Git history as appropriate.
 
+## 2026-07-19 — Repair and restyle upstream navigation cards
+
+- **Work performed by:** Codex, with direction from Victor Bilgin
+- **Commit:** `Pending`
+
+### Outcome
+
+Converted recognized upstream `nav-card` tables into responsive sndocs.com card grids, repairing Markdown links that previously appeared as partial text around omitted icons.
+
+### Changes and decisions
+
+- Deterministically extracted each card's title, destination, and omitted-icon alt text while preserving unfamiliar tables unchanged and collapsing empty cells.
+- Generated fully clickable semantic cards with clean directory URLs, retained upstream table IDs, and preserved existing link-resolution reporting.
+- Added adaptive branded card styling using the local Parchment, Carbon Black, Majorelle Blue, and Classic Crimson palette.
+
+### Verification
+
+- Full suite passed with 66 tests and one filesystem-specific skip; strict production and smoke MkDocs fixtures verified valid rendered anchors and absence of partial card Markdown.
+- The upstream Australia ServiceNow Vault source produced six cards and no icon notices; browser checks at 1440×900 and 390×844 confirmed the branded surface, responsive single-column mobile layout, and no horizontal overflow.
+- `git diff --check` passed.
+
 ## 2026-07-18 — Clean up project records
 
 - **Work performed by:** Codex, with direction from Victor Bilgin

@@ -31,7 +31,11 @@ def test_fixture_builds_with_material_theme(tmp_path, search):
         "![Diagram & details](../image/missing.png)\n\n"
         "```text\nfirst line\n    indented line\n```\n\n"
         "<textarea>first line\n    indented line</textarea>\n\n"
-        "<script>\n  window.fixtureValue = 1 + 2;\n</script>\n",
+        "<script>\n  window.fixtureValue = 1 + 2;\n</script>\n"
+        "<table id=\"fixture-cards\" class=\"nav-card presentation\"><tbody><tr><td>\n\n"
+        "[ServiceNow Vault\\[Omitted image \"vault.svg\"\\] Alt text:Protect sensitive data.]"
+        "(https://raw.githubusercontent.com/ServiceNow/ServiceNowDocs/australia/markdown/pub/new/page.md)\n\n"
+        "</td></tr></tbody></table>\n",
         encoding="utf-8",
     )
     settings = Settings(root, "sndocs.com", "https://sndocs.com", "Mirror", "ServiceNow/ServiceNowDocs", "llms.txt", (), "sndocs-site")
@@ -79,6 +83,10 @@ def test_fixture_builds_with_material_theme(tmp_path, search):
     assert "favicon.ico" in rendered
     assert "apple-touch-icon.png" in rendered
     assert "site.webmanifest" in rendered
+    assert 'class=nav-card-grid id=fixture-cards' in rendered
+    assert 'class=nav-card__item href=./' in rendered
+    assert "Protect sensitive data." in rendered
+    assert "[ServiceNow Vault" not in rendered
     assert 'href="/assets/' not in rendered
     publication_landing = (site / "pub" / "index.html").read_text(encoding="utf-8")
     assert "href=new/page/" in publication_landing

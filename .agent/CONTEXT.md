@@ -12,7 +12,7 @@ Build `sndocs.com`, an independent documentation mirror generated from `ServiceN
 - `discovery.py` parses upstream `llms.txt`, preserves its family/publication ordering, and resolves release-branch SHAs.
 - `source.py` provides remote and reusable-local source implementations; local sources discover and export exact family commits from clean remote-tracking refs without changing branches.
 - `navigation.py` converts publication `index.md` hierarchies into MkDocs navigation and resolves their targets through the shared family link resolver.
-- `transform.py` tolerates malformed YAML frontmatter, enriches pages, rewrites links, renders missing local images as omitted-image notices, and creates placeholders for unavailable content.
+- `transform.py` tolerates malformed YAML frontmatter, enriches pages, rewrites links, converts recognized upstream navigation tables into responsive linked cards, renders missing local images as omitted-image notices, and creates placeholders for unavailable content.
 - `links.py` repairs stale same-family document and navigation links using exact paths, unique basenames, same-publication disambiguation, self-canonical metadata, and narrowly scoped reviewed fallback overrides; unresolved ambiguity is fatal.
 - `builder.py` builds families independently with pruned navigation, writes directly to final family outputs, cleans automatic per-family work, hard-links reusable output when possible, retains removed families as archives, and assembles manifests and version metadata.
 - `artifacts.py` validates the assembled site and creates ZIP/TAR archives with SHA-256 checksums.
@@ -58,11 +58,12 @@ Packaging produces `sndocs-site.tar.gz`, `sndocs-site.zip`, and SHA-256 files fo
 - Stale same-family links are repaired and genuinely missing targets receive placeholders.
 - Incremental and archived builds retain link-resolution reports.
 - Production navigation prunes inactive branches, family sites no longer have a duplicate temporary copy, and local source archives stream during extraction.
-- The test suite currently reports 59 passing tests and one filesystem-specific skip on case-insensitive macOS.
+- The test suite currently reports 66 passing tests and one filesystem-specific skip on case-insensitive macOS.
 - Australia SHA `71f4936` now passes a zero-warning render-free audit and a strict production build with 488 repaired navigation references, 67 missing navigation occurrences represented by placeholders, and 6 omitted-image occurrences across 3 targets.
 - Production and smoke builds minify HTML while leaving inline JavaScript and CSS untouched. A strict Australia rebuild rendered in 253 seconds and reduced the tree from 4,333,444,164 to 2,321,729,890 bytes (46.4%), including an unchanged 238,443,879-byte search directory.
 - Australia production packaging has also been validated locally; retained `site-australia/` and `artifacts-australia/` outputs are ignored for inspection.
 - Every family now receives a generated Material landing page at its manifest route, and artifact validation rejects missing family roots or unrewritten current-family raw Markdown links.
+- Recognized upstream `nav-card` tables render as accessible adaptive card grids with clean directory links and descriptions recovered from omitted-icon alt text.
 - Repository-wide agent and context-maintenance instructions are established in root `AGENTS.md`.
 
 ## Known gaps and risks
