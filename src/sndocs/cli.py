@@ -18,7 +18,7 @@ from .config import load_settings
 from .discovery import discover
 from .quality import STATUSES, load_quality_ruleset
 from .source import LocalSource, RemoteSource, clone_local_source, update_local_source
-from .ui_audit import audit_site_ui
+from .ui_audit import _audit_paths_overlap, audit_site_ui
 
 
 class _Formatter(argparse.RawDescriptionHelpFormatter):
@@ -395,8 +395,8 @@ def _run(args: argparse.Namespace, argument_parser: argparse.ArgumentParser) -> 
     if args.command == "audit-ui":
         site = args.site.resolve()
         output = args.output.resolve()
-        if site == output:
-            argument_parser.error("--output must be different from --site")
+        if _audit_paths_overlap(site, output):
+            argument_parser.error("--output must not overlap --site")
         if output.exists() and not args.clean:
             argument_parser.error(f"output already exists: {output}; pass --clean to replace it")
         if output.exists():

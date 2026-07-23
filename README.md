@@ -135,6 +135,11 @@ register a tested detector before activating an automated rule. Detector impleme
 remain in Python. Rule IDs are permanent and retired IDs are never reused; contributor instructions
 and lifecycle guidance are in `src/sndocs/quality_rules/README.md`.
 
+Use the [UI remediation workflow](docs/ui-remediation.md) to triage a finding, choose the earliest
+responsible layer, add a regression fixture, and select the correct diagnostic and release build.
+Generated Markdown and HTML are never patched in place; one complete family is the smallest safe
+rendering unit.
+
 ## Output contract
 
 The assembled site contains:

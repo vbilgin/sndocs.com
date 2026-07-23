@@ -56,17 +56,14 @@ Packaging produces `sndocs-site.tar.gz`, `sndocs-site.zip`, and SHA-256 files fo
 
 ## Current status
 
-- The initial Python/MkDocs pipeline, Material overrides, packaging, and release workflow are implemented.
-- Malformed upstream YAML containing unquoted colons is handled with a conservative field-level fallback parser.
-- Stale same-family links are repaired and genuinely missing targets receive placeholders.
-- Incremental and archived builds retain link-resolution reports.
+- The Python/MkDocs pipeline, Material overrides, packaging, release workflow, deterministic source normalization, and auditable link repair are implemented.
 - Production navigation prunes inactive branches, family sites no longer have a duplicate temporary copy, and local source archives stream during extraction.
-- The test suite reports 106 passing tests and one filesystem-specific skip on case-insensitive macOS.
+- The test suite reports 110 passing tests and one filesystem-specific skip on case-insensitive macOS.
 - Australia SHA `71f4936` passes a zero-warning render-free audit and strict production build.
 - Production and smoke builds minify HTML while leaving inline JavaScript and CSS untouched; Australia output shrank by 46.4% in validation.
-- Every family now receives a generated Material landing page at its manifest route, and artifact validation rejects missing family roots or unrewritten current-family raw Markdown links.
+- Every family receives a Material landing page, and artifact validation rejects missing family roots or unrewritten current-family raw Markdown links.
 - Recognized upstream `nav-card` tables render as accessible adaptive card grids with clean directory links and descriptions recovered from omitted-icon alt text.
-- The local UI audit groups static and browser evidence under 10 stable semantic rules with separate impact severity and detector confidence.
+- The UI audit groups evidence under 10 semantic rules and has a documented triage, regression-fixture, and family-level rebuild workflow; report paths cannot overlap the read-only input site.
 
 ## Known gaps and risks
 

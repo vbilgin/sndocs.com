@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-07-22
 - **Decision owner:** Victor Bilgin
-- **Related commit:** `Pending`
+- **Related commit:** `f1e3031` — `Suppress expected omitted-navigation diagnostics`
 
 ## Context
 

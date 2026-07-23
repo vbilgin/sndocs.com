@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-07-22
 - **Decision owner:** Victor Bilgin
-- **Related commit:** `Pending`
+- **Related commit:** `a9bc31e` — `Simplify and harden sndocs CLI`
 
 ## Context
 

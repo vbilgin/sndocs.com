@@ -4,10 +4,52 @@ Reverse-chronological record of significant project work. This is a historical i
 
 Older entries are archived in [.agent/worklog/2026-H2.md](worklog/2026-H2.md).
 
+## 2026-07-22 — Reconcile ADR and agent records
+
+- **Work performed by:** Codex, with direction from Victor Bilgin
+- **Commit:** `Protect UI audits from overlapping output paths` (intended subject)
+
+### Outcome
+
+Reconciled the complete ADR catalog and layered agent records with repository history while restoring comfortable size headroom in the active context and worklog.
+
+### Changes and decisions
+
+- Matched completed ADR and worklog entries to their committed SHAs, subjects, and known committer.
+- Reviewed the accepted and superseded decision chain, index coverage, local links, and remaining pending records without rewriting accepted rationale.
+- Condensed redundant current-state prose and moved the oldest active entries into the existing 2026-H2 archive.
+
+### Verification
+
+- Validated every indexed ADR, local Markdown link, and recorded commit subject against Git history.
+- Confirmed context and active-worklog size limits and ran Markdown whitespace checks.
+
+## 2026-07-22 — Define and enforce UI finding remediation
+
+- **Work performed by:** Codex, with direction from Victor Bilgin
+- **Commit:** `Protect UI audits from overlapping output paths` (intended subject)
+
+### Outcome
+
+Turned UI-audit findings into a contributor workflow that fixes the earliest responsible source layer and regenerates complete families without patching generated files or introducing an automatic repair phase.
+
+### Changes and decisions
+
+- Documented triage ownership, regression-fixture expectations, smoke and production diagnostic builds, all-family release validation, and the existing package-wide fingerprint behavior.
+- Enforced read-only audits by rejecting report paths equal to, nested below, or above the input site before `--clean` can remove anything.
+- Added contract coverage proving audits do not invoke builds and pipeline changes rebuild every selected current family.
+- Recorded the durable contributor workflow and family-level rebuild policy in ADR-0017.
+
+### Verification
+
+- The full suite passed with 110 tests and one filesystem-specific skip after granting loopback access for Chromium.
+- Documentation links resolved, `CONTEXT.md` remained within its size limits, and `git diff --check` passed.
+
 ## 2026-07-22 — Introduce a versioned site-quality ruleset
 
 - **Work performed by:** Codex, with direction from Victor Bilgin
-- **Commit:** `Pending`
+- **Committed by:** Victor Bilgin
+- **Commit:** `c8f90dc` — `Define versioned site quality rules`
 
 ### Outcome
 
@@ -27,7 +69,8 @@ Made packaged Markdown rules the authoritative human-readable definition of sndo
 ## 2026-07-22 — Add a local hybrid UI audit
 
 - **Work performed by:** Codex, with direction from Victor Bilgin
-- **Commit:** `Pending`
+- **Committed by:** Victor Bilgin
+- **Commit:** `dc50551` — `Add local hybrid UI audit`
 
 ### Outcome
 
@@ -47,7 +90,8 @@ Added a report-only local audit that scans every generated HTML page and renders
 ## 2026-07-22 — Suppress expected omitted-navigation diagnostics
 
 - **Work performed by:** Codex, with direction from Victor Bilgin
-- **Commit:** `Pending`
+- **Committed by:** Victor Bilgin
+- **Commit:** `f1e3031` — `Suppress expected omitted-navigation diagnostics`
 
 ### Outcome
 
@@ -65,7 +109,8 @@ Stopped expected MkDocs omitted-navigation listings from exhausting terminal his
 ## 2026-07-22 — Decouple runtime resources from configuration location
 
 - **Work performed by:** Codex, with direction from Victor Bilgin
-- **Commit:** `Fix config-independent runtime paths` (intended subject)
+- **Committed by:** Victor Bilgin
+- **Commit:** `9945ef0` — `Fix config-independent runtime paths`
 
 ### Outcome
 
@@ -85,7 +130,8 @@ Allowed custom-named pipeline configuration files to live outside the repository
 ## 2026-07-22 — Simplify and harden the sndocs CLI
 
 - **Work performed by:** Codex, with direction from Victor Bilgin
-- **Commit:** `Pending`
+- **Committed by:** Victor Bilgin
+- **Commit:** `a9bc31e` — `Simplify and harden sndocs CLI`
 
 ### Outcome
 
@@ -105,7 +151,8 @@ Released the breaking 0.2 CLI contract with explicit reusable-source management,
 ## 2026-07-19 — Repair and restyle upstream navigation cards
 
 - **Work performed by:** Codex, with direction from Victor Bilgin
-- **Commit:** `Pending`
+- **Committed by:** Victor Bilgin
+- **Commit:** `f28f6db` — `Repair and restyle upstream navigation cards`
 
 ### Outcome
 
@@ -126,7 +173,8 @@ Converted recognized upstream `nav-card` tables into responsive sndocs.com card 
 ## 2026-07-18 — Clean up project records
 
 - **Work performed by:** Codex, with direction from Victor Bilgin
-- **Commit:** `Clean up project records` (intended subject)
+- **Committed by:** Victor Bilgin
+- **Commit:** `7efa4ed` — `Clean up project records`
 
 ### Outcome
 
@@ -318,80 +366,3 @@ Added automatic, metadata-based resolution for ambiguous stale links whose candi
 - Full test suite: 42 passed, 1 filesystem-specific skip.
 - Australia-wide transformation completed with 219,983 exact links, 15,225 repaired links, 121 placeholders, and zero ambiguities.
 - `git diff --check` passed.
-
-## 2026-07-17 — Add reusable local upstream sources
-
-- **Work performed by:** Codex, with direction from Victor Bilgin
-- **Committed by:** Victor Bilgin
-- **Commit:** `49f4ae1` — `Add reusable local upstream source support`
-
-### Outcome
-
-Enabled offline discovery and faster repeated builds from a reusable full clone of `ServiceNow/ServiceNowDocs` while preserving exact commit SHA and incremental-reuse semantics.
-
-### Changes and decisions
-
-- Added `--source-repo` and `--clone-source` to discovery and build, with explicit `--refresh-source` fetching for existing clones.
-- Required clean local clones and one matching GitHub remote, then read authoritative metadata and family SHAs from remote-tracking refs.
-- Exported exact commits into isolated workspaces without switching or modifying the reusable clone.
-- Moved source preparation ahead of output removal and recorded the reproducible local-snapshot policy in ADR-0008.
-
-### Verification
-
-- Full test suite: 32 passed, 1 filesystem-specific skip.
-- CLI help inspection passed for discovery and build source options.
-- Strict fixture build, Python compilation, and `git diff --check` passed.
-
-## 2026-07-17 — Override an ambiguous Australia formatter link
-
-- **Work performed by:** Codex, with direction from Victor Bilgin
-- **Committed by:** Victor Bilgin
-- **Commit:** `142924d` — `Allow narrowly scoped overrides for ambiguous stale links`
-
-### Outcome
-
-Allowed the Australia family build to resolve one reviewed upstream ambiguity while preserving fatal behavior for every unrecognized ambiguous stale link.
-
-### Changes and decisions
-
-- Added an override keyed by family, referring page, and original target for the stale Approval summarizer formatter link.
-- Selected the `servicenow-platform/approvals/` destination based on its administrative canonical location and breadcrumb.
-- Required override destinations to exist and recorded successful use as `explicit-override` in the link report.
-- Added ADR-0007 to supersede and narrowly extend ADR-0004's strict ambiguity policy.
-
-### Verification
-
-- Full test suite: 21 passed, 1 filesystem-specific skip.
-- `git diff --check` passed.
-
-## 2026-07-16 — Establish layered agent context
-
-- **Work performed by:** Codex, with direction from Victor Bilgin
-- **Committed by:** Victor Bilgin
-- **Commit:** `0a78be3` — `docs: establish layered project context and agent guidance`
-
-### Outcome
-
-Established the first part of a layered, repository-backed context system intended to help future agents resume work without loading full conversation histories.
-
-### Changes
-
-- Added `.agent/CONTEXT.md` as the compact primary handoff document.
-- Recorded the project objective, current architecture, invariants, artifact contract, implementation status, known risks, next work, and verification commands.
-- Chose `.agent/WORKLOG.md` for recent historical context and `docs/adr/` for durable architectural decisions.
-- Added an indexed initial ADR set covering the upstream source contract, version lifecycle, content processing, stale-link repair, release artifacts, and layered context maintenance.
-- Added root `AGENTS.md` with repository-wide context-loading, development, verification, documentation-maintenance, ADR, Git, and handoff policies.
-- Defined Git history as the authoritative source for exact changes and authorship.
-
-### Decisions
-
-- Keep `CONTEXT.md` deliberately bounded and update it as current state changes.
-- Keep the worklog reverse chronological and consult it selectively rather than loading it automatically in full.
-- Archive older worklog entries when the active file becomes large.
-- Use root `AGENTS.md` to tell future agents how to consume and maintain these files.
-
-### Verification
-
-- Cross-checked the context summary against current source files and recent commits.
-- Validated the root agent policy's referenced paths, context/worklog size thresholds, Markdown source formatting, and whitespace.
-- Test suite: 19 passed, 1 skipped on a case-insensitive macOS filesystem.

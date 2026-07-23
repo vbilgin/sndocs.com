@@ -48,3 +48,40 @@ def test_plan_rebuild_reasons_cover_sha_profile_and_missing_output(tmp_path, mon
     missing = Discovery(["australia"], "australia", [], {"australia": "old"})
     assert builder.plan_build(settings(tmp_path), previous, missing)["actions"][0]["reason"] == "reusable family output is missing"
     assert builder.plan_build(settings(tmp_path), previous, missing, build_profile="smoke")["actions"][0]["reason"] == "build profile changed"
+
+
+def test_pipeline_change_rebuilds_every_selected_current_family(tmp_path, monkeypatch):
+    previous = tmp_path / "previous"
+    for family in ("australia", "zurich"):
+        (previous / family).mkdir(parents=True)
+    (previous / "build-manifest.json").write_text(json.dumps({
+        "pipeline_fingerprint": "old",
+        "build_profile": "production",
+        "latest": "australia",
+        "families": {
+            "australia": {"source_sha": "one", "archived": False},
+            "zurich": {"source_sha": "two", "archived": False},
+        },
+    }), encoding="utf-8")
+    monkeypatch.setattr(builder, "pipeline_fingerprint", lambda _root: "new")
+    discovery = Discovery(
+        ["australia", "zurich"],
+        "australia",
+        [],
+        {"australia": "one", "zurich": "two"},
+    )
+
+    plan = builder.plan_build(settings(tmp_path), previous, discovery)
+
+    assert plan["actions"] == [
+        {
+            "family": "australia",
+            "action": "rebuild",
+            "reason": "pipeline fingerprint changed",
+        },
+        {
+            "family": "zurich",
+            "action": "rebuild",
+            "reason": "pipeline fingerprint changed",
+        },
+    ]

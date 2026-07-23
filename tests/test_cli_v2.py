@@ -146,3 +146,58 @@ def test_validate_json_result(tmp_path, capsys):
     }), encoding="utf-8")
     assert cli.main(["validate", "--config", str(config), "--site", str(site), "--json"]) == 0
     assert json.loads(capsys.readouterr().out) == {"site": str(site.resolve()), "valid": True}
+
+
+def test_audit_rejects_overlapping_clean_output_before_removal(tmp_path):
+    config = write_config(tmp_path)
+    report_parent = tmp_path / "audit-parent"
+    site = report_parent / "site"
+    site.mkdir(parents=True)
+    marker = site / "keep"
+    marker.write_text("keep", encoding="utf-8")
+
+    with pytest.raises(SystemExit):
+        cli.main([
+            "audit-ui",
+            "--config",
+            str(config),
+            "--site",
+            str(site),
+            "--output",
+            str(report_parent),
+            "--clean",
+        ])
+
+    assert marker.read_text(encoding="utf-8") == "keep"
+
+
+def test_audit_never_invokes_the_build_path(tmp_path, monkeypatch):
+    config = write_config(tmp_path)
+    site = tmp_path / "site"
+    site.mkdir()
+    (site / "build-manifest.json").write_text("{}", encoding="utf-8")
+    output = tmp_path / "report"
+    monkeypatch.setattr(
+        cli,
+        "build_site",
+        lambda *_args, **_kwargs: pytest.fail("audit-ui invoked the build path"),
+    )
+    monkeypatch.setattr(
+        cli,
+        "audit_site_ui",
+        lambda *_args, **_kwargs: {
+            "findings": [],
+            "errors": [],
+            "coverage": {"html_pages": 0, "browser_renders": 0},
+        },
+    )
+
+    assert cli.main([
+        "audit-ui",
+        "--config",
+        str(config),
+        "--site",
+        str(site),
+        "--output",
+        str(output),
+    ]) == 0

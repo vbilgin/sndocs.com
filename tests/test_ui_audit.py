@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from sndocs import ui_audit
 from sndocs.ui_audit import (
     FindingStore,
     StaticAudit,
@@ -76,6 +77,35 @@ def test_sampling_is_deterministic_and_keeps_high_risk_pages():
     assert len(first) == 4
     with pytest.raises(ValueError, match="cannot be negative"):
         select_pages(audit, -1, 0)
+
+
+def test_audit_is_read_only_and_rejects_overlapping_report_paths(tmp_path, monkeypatch):
+    site = _site(tmp_path)
+    (site / "index.html").write_text("<p>unchanged</p>", encoding="utf-8")
+    before = {
+        path.relative_to(site): path.read_bytes()
+        for path in site.rglob("*")
+        if path.is_file()
+    }
+    monkeypatch.setattr(ui_audit, "browser_audit", lambda *_args: 0)
+
+    report = audit_site_ui(site, tmp_path / "report", sample_size=0)
+
+    after = {
+        path.relative_to(site): path.read_bytes()
+        for path in site.rglob("*")
+        if path.is_file()
+    }
+    assert report["coverage"]["html_pages"] == 1
+    assert after == before
+    for output in (site, site / "report", tmp_path):
+        with pytest.raises(ValueError, match="must not overlap"):
+            audit_site_ui(site, output, sample_size=0)
+    assert after == {
+        path.relative_to(site): path.read_bytes()
+        for path in site.rglob("*")
+        if path.is_file()
+    }
 
 
 def test_browser_audit_writes_report_and_remains_report_only(tmp_path):

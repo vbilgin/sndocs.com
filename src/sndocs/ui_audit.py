@@ -40,6 +40,17 @@ HREF_RE = re.compile(
 TAG_RE = re.compile(r"<[^>]+>")
 
 
+def _audit_paths_overlap(site: Path, output: Path) -> bool:
+    """Return whether an audit report path could modify its input site."""
+    resolved_site = site.resolve()
+    resolved_output = output.resolve()
+    return (
+        resolved_site == resolved_output
+        or resolved_output.is_relative_to(resolved_site)
+        or resolved_site.is_relative_to(resolved_output)
+    )
+
+
 def _normalized_text(value: str) -> str:
     return " ".join(value.split())
 
@@ -537,6 +548,8 @@ def audit_site_ui(
     sample_size: int = 100,
     seed: int = 0,
 ) -> dict:
+    if _audit_paths_overlap(site, output):
+        raise ValueError(f"audit output must not overlap input site: {output}")
     manifest_path = site / "build-manifest.json"
     if not site.is_dir() or not manifest_path.is_file():
         raise ValueError(f"site has no build-manifest.json: {site}")
