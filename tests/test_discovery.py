@@ -1,3 +1,5 @@
+import pytest
+
 from sndocs.discovery import parse_llms
 
 
@@ -22,3 +24,8 @@ def test_parse_llms_applies_allowlist_without_changing_source_order():
     assert result.families == ["zurich"]
     assert result.latest == "zurich"
 
+
+def test_parse_llms_reorders_allowlist_to_match_upstream_and_rejects_unknown():
+    assert parse_llms(LLMS, ("zurich", "australia")).families == ["australia", "zurich"]
+    with pytest.raises(ValueError, match="unknown release families: future"):
+        parse_llms(LLMS, ("future",))

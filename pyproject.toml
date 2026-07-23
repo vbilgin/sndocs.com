@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sndocs-pipeline"
-version = "0.1.0"
+version = "0.2.0"
 description = "Build a versioned MkDocs mirror of ServiceNowDocs"
 readme = "README.md"
 requires-python = ">=3.11"

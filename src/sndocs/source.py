@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import sys
 import tarfile
 import urllib.request
 from pathlib import Path, PurePosixPath
@@ -47,6 +48,8 @@ class RemoteSource:
                 f"https://github.com/{settings.repository}.git", str(destination),
             ],
             check=True,
+            stdout=sys.stderr,
+            stderr=sys.stderr,
         )
         actual = _git(destination, "rev-parse", "HEAD")
         if actual != sha:
@@ -80,7 +83,12 @@ class LocalSource:
             raise ValueError(f"local source repository must be clean: {self.path}")
         self.remote = self._matching_remote(settings.repository)
         if refresh:
-            subprocess.run(["git", "-C", str(self.path), "fetch", "--prune", self.remote], check=True)
+            subprocess.run(
+                ["git", "-C", str(self.path), "fetch", "--prune", self.remote],
+                check=True,
+                stdout=sys.stderr,
+                stderr=sys.stderr,
+            )
         self.default_ref = self._default_ref()
 
     def _matching_remote(self, expected: str) -> str:
@@ -100,7 +108,7 @@ class LocalSource:
             return _git(self.path, "symbolic-ref", ref)
         except subprocess.CalledProcessError as error:
             raise ValueError(
-                f"local source has no default-branch metadata at {ref}; run with --refresh-source"
+                f"local source has no default-branch metadata at {ref}; run `sndocs source update PATH`"
             ) from error
 
     def read_llms(self, settings: Settings) -> str:
@@ -120,7 +128,7 @@ class LocalSource:
                 missing.append(family)
         if missing:
             raise ValueError(
-                f"local source is missing family refs: {', '.join(missing)}; run with --refresh-source"
+                f"local source is missing family refs: {', '.join(missing)}; run `sndocs source update PATH`"
             )
         return shas
 
@@ -151,5 +159,11 @@ def clone_local_source(path: Path, settings: Settings) -> LocalSource:
     subprocess.run(
         ["git", "clone", f"https://github.com/{settings.repository}.git", str(path)],
         check=True,
+        stdout=sys.stderr,
+        stderr=sys.stderr,
     )
     return LocalSource(path, settings)
+
+
+def update_local_source(path: Path, settings: Settings) -> LocalSource:
+    return LocalSource(path, settings, refresh=True)

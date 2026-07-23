@@ -54,7 +54,7 @@ def test_automatic_workspace_is_removed_after_failure(tmp_path, monkeypatch):
         raise RuntimeError("failed")
 
     monkeypatch.setattr(cli, "build_site", failing_build)
-    with pytest.raises(RuntimeError, match="failed"):
+    with pytest.raises(SystemExit, match="2"):
         cli.main(["--config", str(config), "build", "--output", str(tmp_path / "site")])
 
     assert not observed[0].exists()
@@ -136,6 +136,30 @@ def test_serve_accepts_bind_and_port_overrides(tmp_path, monkeypatch):
     ])
 
     assert observed["address"] == ("localhost", 4321)
+
+
+def test_serve_port_zero_reports_allocated_port(tmp_path, monkeypatch, capsys):
+    config = write_config(tmp_path)
+    site = tmp_path / "built-site"
+    site.mkdir()
+    observed = {}
+
+    class FakeServer:
+        server_address = ("127.0.0.1", 54321)
+
+        def __init__(self, address, _handler):
+            observed["address"] = address
+
+        def serve_forever(self):
+            raise KeyboardInterrupt
+
+        def server_close(self):
+            pass
+
+    monkeypatch.setattr(cli.http.server, "ThreadingHTTPServer", FakeServer)
+    cli.main(["--config", str(config), "serve", "--site", str(site), "--port", "0"])
+    assert observed["address"] == ("127.0.0.1", 0)
+    assert "http://127.0.0.1:54321/" in capsys.readouterr().out
 
 
 def test_serve_rejects_missing_site(tmp_path, capsys):

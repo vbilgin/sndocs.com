@@ -15,6 +15,9 @@ def parse_llms(text: str, allowlist: tuple[str, ...] = ()) -> Discovery:
     mapped = [branch for family, branch in FAMILY_RE.findall(text) if family == branch]
     if not mapped:
         raise ValueError("llms.txt did not contain a family-to-branch mapping")
+    unknown = [family for family in allowlist if family not in mapped]
+    if unknown:
+        raise ValueError(f"unknown release families: {', '.join(unknown)}")
     families = [family for family in mapped if not allowlist or family in allowlist]
     if not families:
         raise ValueError("family allowlist excluded every discovered family")
@@ -29,8 +32,13 @@ def parse_llms(text: str, allowlist: tuple[str, ...] = ()) -> Discovery:
     return Discovery(families=families, latest=families[0], publications=publications)
 
 
-def discover(settings: Settings, source: SourceRepository | None = None) -> Discovery:
+def discover(
+    settings: Settings,
+    source: SourceRepository | None = None,
+    family_allowlist: tuple[str, ...] | None = None,
+) -> Discovery:
     source = source or RemoteSource()
-    result = parse_llms(source.read_llms(settings), settings.family_allowlist)
+    allowlist = settings.family_allowlist if family_allowlist is None else family_allowlist
+    result = parse_llms(source.read_llms(settings), allowlist)
     result.shas = source.resolve_shas(settings, result.families)
     return result

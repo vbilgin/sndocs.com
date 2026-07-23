@@ -1,6 +1,6 @@
 # Project Context
 
-Compact handoff document for contributors and agents. Keep this file focused on current state; use `.agent/WORKLOG.md`, ADRs, and Git history for historical detail.
+Compact current-state handoff; use `.agent/WORKLOG.md`, ADRs, and Git history for historical detail.
 
 ## Objective
 
@@ -18,7 +18,7 @@ Build `sndocs.com`, an independent documentation mirror generated from `ServiceN
 - `artifacts.py` validates the assembled site and creates ZIP/TAR archives with SHA-256 checksums.
 - `.github/workflows/build-site.yml` runs scheduled or manual builds and publishes the rolling `site-artifact` GitHub Release when inputs change.
 
-The `sndocs` CLI provides discovery, build, validation, packaging, and local HTTP preview. Discovery and builds support reusable local sources; smoke builds render only the newest family without search.
+The `sndocs` 0.2 CLI manages reusable sources, discovery, side-effect-free build planning, production or selected-family smoke builds, validation, packaging, and local HTTP preview. It provides concise human or single-object JSON results and automatic GitHub Actions outputs.
 
 ## Important invariants and decisions
 
@@ -31,7 +31,8 @@ The `sndocs` CLI provides discovery, build, validation, packaging, and local HTT
 - Cross-family moved-link resolution is intentionally not attempted.
 - MkDocs strict mode remains enabled; ambiguity and pipeline-created broken links fail.
 - Production builds include every selected family and search; smoke manifests are distinct, omit search, and cannot be packaged.
-- Automatic workspaces live under ignored `.temp/`, are bounded to one family's source/transformed Markdown, and are cleaned automatically; explicit `--work-dir` content is preserved.
+- Existing build output requires explicit `--clean` replacement after discovery succeeds; dry runs never write or delete files.
+- Automatic workspaces below ignored `.temp/` are bounded to one family and cleaned automatically; explicit `--work-dir` content is preserved.
 - Source prose is preserved with light enrichment rather than editorial restructuring.
 - Upstream media is not restored because ServiceNowDocs intentionally omits it.
 - Generated Markdown and HTML stay out of the main branch.
@@ -58,13 +59,11 @@ Packaging produces `sndocs-site.tar.gz`, `sndocs-site.zip`, and SHA-256 files fo
 - Stale same-family links are repaired and genuinely missing targets receive placeholders.
 - Incremental and archived builds retain link-resolution reports.
 - Production navigation prunes inactive branches, family sites no longer have a duplicate temporary copy, and local source archives stream during extraction.
-- The test suite currently reports 66 passing tests and one filesystem-specific skip on case-insensitive macOS.
+- The test suite currently reports 85 passing tests and one filesystem-specific skip on case-insensitive macOS.
 - Australia SHA `71f4936` now passes a zero-warning render-free audit and a strict production build with 488 repaired navigation references, 67 missing navigation occurrences represented by placeholders, and 6 omitted-image occurrences across 3 targets.
-- Production and smoke builds minify HTML while leaving inline JavaScript and CSS untouched. A strict Australia rebuild rendered in 253 seconds and reduced the tree from 4,333,444,164 to 2,321,729,890 bytes (46.4%), including an unchanged 238,443,879-byte search directory.
-- Australia production packaging has also been validated locally; retained `site-australia/` and `artifacts-australia/` outputs are ignored for inspection.
+- Production and smoke builds minify HTML while leaving inline JavaScript and CSS untouched; Australia output shrank by 46.4% in validation.
 - Every family now receives a generated Material landing page at its manifest route, and artifact validation rejects missing family roots or unrewritten current-family raw Markdown links.
 - Recognized upstream `nav-card` tables render as accessible adaptive card grids with clean directory links and descriptions recovered from omitted-icon alt text.
-- Repository-wide agent and context-maintenance instructions are established in root `AGENTS.md`.
 
 ## Known gaps and risks
 

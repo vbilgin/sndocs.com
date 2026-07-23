@@ -48,7 +48,7 @@ jobs:
 
       - name: Build site
         id: build
-        run: sndocs build --output site --previous-site previous-site --github-output "$GITHUB_OUTPUT"
+        run: sndocs build --output site --reuse-from previous-site
 
       - name: Package and verify site
         if: steps.build.outputs.changed == 'true' || inputs.force == true

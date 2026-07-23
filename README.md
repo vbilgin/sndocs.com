@@ -27,28 +27,32 @@ Discover the current upstream structure without building it:
 .venv/bin/sndocs discover
 ```
 
-For faster repeated testing, create a reusable full upstream clone during the first discovery or build, then use it offline on later runs:
+For faster repeated testing, create and verify a reusable full upstream clone, then use it offline:
 
 ```shell
-.venv/bin/sndocs discover --clone-source ../ServiceNowDocs
-.venv/bin/sndocs build --output site --source-repo ../ServiceNowDocs
+.venv/bin/sndocs source clone ../ServiceNowDocs
+.venv/bin/sndocs source check ../ServiceNowDocs
+.venv/bin/sndocs discover --source ../ServiceNowDocs
+.venv/bin/sndocs build --output site --source ../ServiceNowDocs
 ```
 
-The local clone must be clean and have exactly one SSH or HTTPS remote matching `upstream.repository`. Normal local runs use its committed remote-tracking refs without network access or branch switching. Refresh those refs explicitly when desired:
+The local clone must be clean and have exactly one SSH or HTTPS remote matching `upstream.repository`. Normal local runs use its committed remote-tracking refs without network access or branch switching. Refresh and verify those refs explicitly when desired:
 
 ```shell
-.venv/bin/sndocs discover --source-repo ../ServiceNowDocs --refresh-source
+.venv/bin/sndocs source update ../ServiceNowDocs
 ```
 
-`--clone-source` fails if its destination already exists. Use `--source-repo` for an existing clone. Both source options are available on `discover` and `build`; local paths are intentionally per-run CLI inputs rather than project configuration.
+`source clone` fails if its destination already exists. Local paths are intentionally per-run CLI inputs rather than project configuration.
 
 Build a complete site, optionally reusing a previously unpacked artifact:
 
 ```shell
-.venv/bin/sndocs build --output site --previous-site previous-site
+.venv/bin/sndocs build --output site --reuse-from previous-site
 .venv/bin/sndocs validate --site site
 .venv/bin/sndocs package --site site --destination artifacts
 ```
+
+An existing output is never removed implicitly. Pass `--clean` to replace one after source discovery and validation succeed. `--reuse-from` must identify a separate assembled site.
 
 Automatic build workspaces are created below the ignored `.temp/` directory and removed as each
 family finishes. Supply a fresh `--work-dir` path to preserve source snapshots, transformed
@@ -58,15 +62,26 @@ cleaned automatically.
 Use smoke mode for a fast, strict local check of the newest family without search indexing:
 
 ```shell
-.venv/bin/sndocs build --output site-smoke --source-repo ../ServiceNowDocs --smoke
+.venv/bin/sndocs build --output site-smoke --source ../ServiceNowDocs --smoke
 .venv/bin/sndocs validate --site site-smoke
 ```
 
 Smoke manifests are marked with `build_profile: smoke` and cannot be packaged as production
 artifacts. Production remains the default: it renders and indexes all Markdown in every current
 release family. Material navigation prunes inactive branches from each page so the full navigation
-hierarchy does not multiply the generated HTML size. Use `upstream.families` in `pipeline.toml` to
-restrict other local experiments to named families.
+hierarchy does not multiply the generated HTML size. Repeat `--family NAME` to override
+`upstream.families` for one run while preserving upstream ordering. Smoke accepts at most one
+selected family; without one it uses the newest family.
+
+Preview incremental decisions without writing or deleting files:
+
+```shell
+.venv/bin/sndocs build --dry-run --reuse-from previous-site --source ../ServiceNowDocs
+```
+
+Finite commands accept `--json` before or after the command and emit one JSON object on standard
+output while progress goes to standard error. In GitHub Actions, a successful real build writes
+`changed` and `latest` automatically when `GITHUB_OUTPUT` is present.
 
 Preview any completed build through the local web server:
 
@@ -78,7 +93,7 @@ Then open `http://127.0.0.1:8000/`. The generated site uses clean directory URLs
 `/australia/better-together/using-ham-for-esg/`; the corresponding file on disk is
 `using-ham-for-esg/index.html`. Opening the output through `file://` is not supported because the
 filesystem protocol does not serve a directory's `index.html` automatically. Use `--bind` or
-`--port` to override the preview server defaults.
+`--port` to override the preview server defaults; `--port 0` selects an available port.
 
 ## Output contract
 

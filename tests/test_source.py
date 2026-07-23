@@ -178,6 +178,23 @@ def test_refresh_fetches_only_when_requested(local_clone, monkeypatch):
     assert fetches == [["git", "-C", str(repository.resolve()), "fetch", "--prune", "origin"]]
 
 
+def test_source_check_cli_is_offline_and_returns_json(local_clone, tmp_path, monkeypatch, capsys):
+    repository, _, _ = local_clone
+    config = tmp_path / "pipeline.toml"
+    config.write_text('[site]\n[upstream]\nrepository = "owner/repo"\n', encoding="utf-8")
+    original_run = source_module.subprocess.run
+
+    def no_fetch(arguments, *args, **kwargs):
+        assert "fetch" not in arguments
+        return original_run(arguments, *args, **kwargs)
+
+    monkeypatch.setattr(source_module.subprocess, "run", no_fetch)
+    assert main(["source", "check", str(repository), "--config", str(config), "--json"]) == 0
+    output = __import__("json").loads(capsys.readouterr().out)
+    assert output["status"] == "ok"
+    assert output["families"] == ["australia", "zurich"]
+
+
 def test_clone_destination_must_not_exist(tmp_path):
     destination = tmp_path / "exists"
     destination.mkdir()
@@ -185,16 +202,14 @@ def test_clone_destination_must_not_exist(tmp_path):
         clone_local_source(destination, settings(tmp_path))
 
 
-def test_source_cli_options_are_mutually_exclusive():
+def test_removed_source_cli_options_are_rejected():
     with pytest.raises(SystemExit):
         parser().parse_args(["discover", "--source-repo", "one", "--clone-source", "two"])
 
 
-def test_refresh_requires_existing_source_option(tmp_path, monkeypatch):
-    config = tmp_path / "pipeline.toml"
-    config.write_text('[site]\n[upstream]\nrepository = "owner/repo"\n', encoding="utf-8")
+def test_source_update_requires_a_path():
     with pytest.raises(SystemExit):
-        main(["--config", str(config), "discover", "--refresh-source"])
+        parser().parse_args(["source", "update"])
 
 
 def test_invalid_local_source_does_not_remove_build_output(local_clone, tmp_path):
@@ -210,6 +225,6 @@ def test_invalid_local_source_does_not_remove_build_output(local_clone, tmp_path
     with pytest.raises(SystemExit):
         main([
             "--config", str(config), "build", "--output", str(output),
-            "--source-repo", str(repository),
+            "--source", str(repository), "--clean",
         ])
     assert marker.read_text() == "preserved"

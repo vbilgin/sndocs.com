@@ -4,74 +4,251 @@ import argparse
 import functools
 import http.server
 import json
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
+from . import __version__
 from .artifacts import package_site, validate_site
-from .builder import MANIFEST_NAME, build_site
+from .builder import MANIFEST_NAME, build_site, plan_build
 from .config import load_settings
 from .discovery import discover
-from .source import LocalSource, RemoteSource, clone_local_source
+from .source import LocalSource, RemoteSource, clone_local_source, update_local_source
+
+
+class _Formatter(argparse.RawDescriptionHelpFormatter):
+    pass
+
+
+def _common_options(command: argparse.ArgumentParser, *, suppress_defaults: bool = True) -> None:
+    default = argparse.SUPPRESS if suppress_defaults else Path("pipeline.toml")
+    command.add_argument(
+        "--config",
+        type=Path,
+        default=default,
+        help="pipeline configuration file (default: pipeline.toml)",
+    )
+    json_default = argparse.SUPPRESS if suppress_defaults else False
+    command.add_argument(
+        "--json",
+        action="store_true",
+        default=json_default,
+        help="write one machine-readable result object to stdout",
+    )
 
 
 def parser() -> argparse.ArgumentParser:
-    result = argparse.ArgumentParser(prog="sndocs", description="Build the sndocs.com static documentation mirror")
-    result.add_argument("--config", type=Path, default=Path("pipeline.toml"))
-    commands = result.add_subparsers(dest="command", required=True)
-    discover_command = commands.add_parser("discover", help="discover upstream families and publication metadata")
-    build = commands.add_parser("build", help="build or incrementally assemble the complete site")
-    build.add_argument("--output", type=Path, required=True)
-    build.add_argument("--work-dir", type=Path)
-    build.add_argument("--previous-site", type=Path)
-    build.add_argument("--github-output", type=Path)
-    build.add_argument(
-        "--smoke",
-        action="store_true",
-        help="build only the newest family without search indexing",
+    result = argparse.ArgumentParser(
+        prog="sndocs",
+        description="Build the sndocs.com static documentation mirror",
+        formatter_class=_Formatter,
     )
-    for command in (discover_command, build):
-        sources = command.add_mutually_exclusive_group()
-        sources.add_argument("--source-repo", type=Path, help="use an existing local upstream clone")
-        sources.add_argument("--clone-source", type=Path, help="clone upstream here, then use the clone")
-        command.add_argument("--refresh-source", action="store_true", help="fetch the existing local source before use")
-    package = commands.add_parser("package", help="validate and package a built site")
-    package.add_argument("--site", type=Path, required=True)
-    package.add_argument("--destination", type=Path, required=True)
-    commands.add_parser("validate", help="validate the default ./site output").add_argument("--site", type=Path, default=Path("site"))
-    serve = commands.add_parser("serve", help="preview a built site with clean directory URLs")
-    serve.add_argument("--site", type=Path, default=Path("site"))
+    _common_options(result, suppress_defaults=False)
+    result.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    commands = result.add_subparsers(dest="command", required=True)
+
+    source = commands.add_parser(
+        "source",
+        help="manage and verify a reusable upstream clone",
+        description="Clone, update, or check a reusable upstream repository.",
+        formatter_class=_Formatter,
+        epilog="Examples:\n  sndocs source clone ../ServiceNowDocs\n  sndocs source check ../ServiceNowDocs",
+    )
+    _common_options(source)
+    source_commands = source.add_subparsers(dest="source_command", required=True)
+    for name, help_text in (
+        ("clone", "create and verify a new full upstream clone"),
+        ("update", "fetch, prune, and verify an existing clone"),
+        ("check", "verify an existing clone without network access"),
+    ):
+        subcommand = source_commands.add_parser(
+            name,
+            help=help_text,
+            description=help_text,
+            formatter_class=_Formatter,
+            epilog=f"Example:\n  sndocs source {name} ../ServiceNowDocs",
+        )
+        _common_options(subcommand)
+        subcommand.add_argument("path", type=Path, help="path to the reusable upstream clone")
+
+    discover_command = commands.add_parser(
+        "discover",
+        help="discover upstream families and publication metadata",
+        description="Discover families, publications, and exact branch SHAs without building.",
+        formatter_class=_Formatter,
+        epilog="Examples:\n  sndocs discover\n  sndocs discover --source ../ServiceNowDocs --json",
+    )
+    _common_options(discover_command)
+    discover_command.add_argument(
+        "--source", type=Path, help="use this clean local clone offline instead of GitHub"
+    )
+
+    build = commands.add_parser(
+        "build",
+        help="build, plan, or incrementally assemble the site",
+        description=(
+            "Build the selected site. Existing output is refused unless --clean is supplied.\n"
+            "With --dry-run, discovery and reuse decisions are reported without writing output."
+        ),
+        formatter_class=_Formatter,
+        epilog=(
+            "Examples:\n"
+            "  sndocs build --output site --source ../ServiceNowDocs\n"
+            "  sndocs build --dry-run --reuse-from previous-site --json"
+        ),
+    )
+    _common_options(build)
+    build.add_argument("--output", type=Path, help="generated site directory (required unless --dry-run)")
+    build.add_argument("--clean", action="store_true", help="remove an existing output directory before building")
+    build.add_argument("--work-dir", type=Path, help="preserve intermediate build files at this path")
+    build.add_argument("--reuse-from", type=Path, help="reuse unchanged families and retain archives from this site")
+    build.add_argument("--source", type=Path, help="use this clean local clone offline instead of GitHub")
+    build.add_argument(
+        "--family",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="build this family; repeat to select several in upstream order",
+    )
+    build.add_argument("--smoke", action="store_true", help="build one family without search indexing")
+    build.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="report rebuild, reuse, and archive actions without writing files",
+    )
+
+    package = commands.add_parser(
+        "package",
+        help="validate and package a production site",
+        epilog="Example:\n  sndocs package --site site --destination artifacts",
+        formatter_class=_Formatter,
+    )
+    _common_options(package)
+    package.add_argument("--site", type=Path, required=True, help="assembled production site")
+    package.add_argument("--destination", type=Path, required=True, help="archive output directory")
+
+    validate = commands.add_parser(
+        "validate",
+        help="validate an assembled site",
+        epilog="Example:\n  sndocs validate --site site",
+        formatter_class=_Formatter,
+    )
+    _common_options(validate)
+    validate.add_argument("--site", type=Path, default=Path("site"), help="site to validate (default: site)")
+
+    serve = commands.add_parser(
+        "serve",
+        help="preview a built site with clean directory URLs",
+        description="Serve a completed site locally. Use --port 0 to select an available port.",
+        epilog="Example:\n  sndocs serve --site site --port 8000",
+        formatter_class=_Formatter,
+    )
+    serve.add_argument("--config", type=Path, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    serve.add_argument("--site", type=Path, default=Path("site"), help="site to serve (default: site)")
     serve.add_argument("--bind", default="127.0.0.1", help="address to bind (default: 127.0.0.1)")
-    serve.add_argument("--port", type=int, default=8000, help="port to bind (default: 8000)")
+    serve.add_argument("--port", type=int, default=8000, help="port to bind; 0 selects an available port (default: 8000)")
     return result
 
 
-def main(argv: list[str] | None = None) -> int:
-    argument_parser = parser()
-    args = argument_parser.parse_args(argv)
+def _emit(args: argparse.Namespace, result: dict, summary: str) -> None:
+    if args.json:
+        print(json.dumps(result, indent=2))
+    else:
+        print(summary)
+
+
+def _selected_families(args: argparse.Namespace) -> tuple[str, ...] | None:
+    families = args.family
+    if len(families) != len(set(families)):
+        duplicates = sorted({family for family in families if families.count(family) > 1})
+        raise ValueError(f"duplicate release families: {', '.join(duplicates)}")
+    if args.smoke and len(families) > 1:
+        raise ValueError("--smoke accepts at most one --family")
+    return tuple(families) if families else None
+
+
+def _local_source(path: Path | None, settings):
+    return LocalSource(path, settings) if path else RemoteSource()
+
+
+def _source_result(path: Path, settings, source) -> dict:
+    discovery_result = discover(settings, source)
+    return {
+        "source": str(path.resolve()),
+        "repository": settings.repository,
+        "families": discovery_result.families,
+        "status": "ok",
+    }
+
+
+def _write_github_output(changed: bool, latest: str) -> None:
+    target = os.environ.get("GITHUB_OUTPUT")
+    if not target:
+        return
+    with Path(target).open("a", encoding="utf-8") as stream:
+        stream.write(f"changed={'true' if changed else 'false'}\n")
+        stream.write(f"latest={latest}\n")
+
+
+def _run(args: argparse.Namespace, argument_parser: argparse.ArgumentParser) -> int:
+    if args.command == "serve" and getattr(args, "json", False):
+        argument_parser.error("--json is not supported by serve")
     settings = load_settings(args.config.resolve())
-    if args.command in {"discover", "build"}:
-        if args.refresh_source and not args.source_repo:
-            argument_parser.error("--refresh-source requires --source-repo")
-        try:
-            if args.clone_source:
-                source_repository = clone_local_source(args.clone_source, settings)
-            elif args.source_repo:
-                source_repository = LocalSource(args.source_repo, settings, refresh=args.refresh_source)
-            else:
-                source_repository = RemoteSource()
-            discovery_result = discover(settings, source_repository)
-        except (ValueError, subprocess.CalledProcessError) as error:
-            argument_parser.error(str(error))
-    if args.command == "discover":
-        print(json.dumps(discovery_result.to_dict(), indent=2))
+
+    if args.command == "source":
+        path = args.path.resolve()
+        if args.source_command == "clone":
+            source = clone_local_source(path, settings)
+        elif args.source_command == "update":
+            source = update_local_source(path, settings)
+        else:
+            source = LocalSource(path, settings)
+        result = _source_result(path, settings, source)
+        _emit(args, result, f"Source {args.source_command} passed: {path} ({len(result['families'])} families)")
         return 0
+
+    if args.command == "discover":
+        discovery_result = discover(settings, _local_source(args.source, settings))
+        result = discovery_result.to_dict()
+        _emit(args, result, f"Discovered {len(result['families'])} families; latest is {result['latest']}")
+        return 0
+
     if args.command == "build":
-        output = args.output.resolve()
-        previous_site = args.previous_site.resolve() if args.previous_site else None
+        if args.dry_run and args.clean:
+            argument_parser.error("--clean cannot be used with --dry-run")
+        if not args.dry_run and args.output is None:
+            argument_parser.error("--output is required unless --dry-run is supplied")
+        output = args.output.resolve() if args.output else None
+        reuse_from = args.reuse_from.resolve() if args.reuse_from else None
+        if output and reuse_from and output == reuse_from:
+            argument_parser.error("--reuse-from must be different from --output")
+        if output and output.exists() and not args.dry_run and not args.clean:
+            argument_parser.error(f"output already exists: {output}; pass --clean to replace it")
+        allowlist = _selected_families(args)
+        source_repository = _local_source(args.source, settings)
+        discovery_result = discover(settings, source_repository, allowlist)
         build_profile = "smoke" if args.smoke else "production"
+        if args.smoke and not allowlist:
+            latest = discovery_result.latest
+            discovery_result.families = [latest]
+            discovery_result.shas = {latest: discovery_result.shas[latest]}
+        plan = plan_build(settings, reuse_from, discovery_result, build_profile=build_profile)
+        if args.dry_run:
+            result = {
+                "latest": plan["latest"],
+                "build_profile": build_profile,
+                "families": discovery_result.families,
+                "actions": plan["actions"],
+            }
+            summary = "\n".join(
+                f"{item['family']}: {item['action']} — {item['reason']}" for item in plan["actions"]
+            )
+            _emit(args, result, summary)
+            return 0
+        assert output is not None
         if output.exists():
             shutil.rmtree(output)
         if args.work_dir:
@@ -80,7 +257,7 @@ def main(argv: list[str] | None = None) -> int:
                 settings,
                 output,
                 args.work_dir.resolve(),
-                previous_site,
+                reuse_from,
                 source_repository,
                 discovery_result,
                 build_profile=build_profile,
@@ -88,45 +265,52 @@ def main(argv: list[str] | None = None) -> int:
         else:
             temporary_root = settings.root / ".temp"
             temporary_root.mkdir(parents=True, exist_ok=True)
-            temporary = None
-            try:
-                with tempfile.TemporaryDirectory(prefix="sndocs-", dir=temporary_root) as temporary:
-                    print(f"Automatic workspace: {temporary}")
-                    manifest, changed = build_site(
-                        settings,
-                        output,
-                        Path(temporary),
-                        previous_site,
-                        source_repository,
-                        discovery_result,
-                        build_profile=build_profile,
-                        cleanup_work=True,
-                    )
-            finally:
-                if temporary:
-                    print(f"Automatic workspace removed: {temporary}")
-        if args.github_output:
-            with args.github_output.open("a", encoding="utf-8") as stream:
-                stream.write(f"changed={'true' if changed else 'false'}\n")
-                stream.write(f"latest={manifest['latest']}\n")
-        print(json.dumps(manifest, indent=2))
+            with tempfile.TemporaryDirectory(prefix="sndocs-", dir=temporary_root) as temporary:
+                print(f"Automatic workspace: {temporary}", file=sys.stderr)
+                manifest, changed = build_site(
+                    settings,
+                    output,
+                    Path(temporary),
+                    reuse_from,
+                    source_repository,
+                    discovery_result,
+                    build_profile=build_profile,
+                    cleanup_work=True,
+                )
+                print(f"Automatic workspace removed: {temporary}", file=sys.stderr)
+        _write_github_output(changed, manifest["latest"])
+        result = {
+            "changed": changed,
+            "latest": manifest["latest"],
+            "build_profile": manifest["build_profile"],
+            "families": list(manifest["families"]),
+            "output": str(output),
+            "manifest": str(output / MANIFEST_NAME),
+        }
+        _emit(args, result, f"Built {len(result['families'])} families at {output}; changed={str(changed).lower()}")
         return 0
+
     if args.command == "package":
-        files = package_site(args.site.resolve(), args.destination.resolve(), settings.archive_basename)
-        manifest_target = args.destination.resolve() / MANIFEST_NAME
-        shutil.copy2(args.site.resolve() / MANIFEST_NAME, manifest_target)
-        print("\n".join(str(path) for path in [*files, manifest_target]))
+        site = args.site.resolve()
+        destination = args.destination.resolve()
+        files = package_site(site, destination, settings.archive_basename)
+        manifest_target = destination / MANIFEST_NAME
+        shutil.copy2(site / MANIFEST_NAME, manifest_target)
+        generated = [*files, manifest_target]
+        result = {"site": str(site), "destination": str(destination), "files": [str(path) for path in generated]}
+        _emit(args, result, f"Packaged {len(generated)} files in {destination}")
         return 0
+
     if args.command == "validate":
-        validate_site(args.site.resolve())
-        print("site validation passed")
+        site = args.site.resolve()
+        validate_site(site)
+        _emit(args, {"site": str(site), "valid": True}, f"Site validation passed: {site}")
         return 0
+
     if args.command == "serve":
         site = args.site.resolve()
         if not site.is_dir():
-            argument_parser.error(
-                f"site directory does not exist: {site}; build it first or pass --site PATH"
-            )
+            argument_parser.error(f"site directory does not exist: {site}; build it first or pass --site PATH")
         handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(site))
         server = http.server.ThreadingHTTPServer((args.bind, args.port), handler)
         host, port = server.server_address[:2]
@@ -140,6 +324,16 @@ def main(argv: list[str] | None = None) -> int:
         finally:
             server.server_close()
         return 0
+    return 2
+
+
+def main(argv: list[str] | None = None) -> int:
+    argument_parser = parser()
+    args = argument_parser.parse_args(argv)
+    try:
+        return _run(args, argument_parser)
+    except (ValueError, RuntimeError, OSError, subprocess.CalledProcessError, json.JSONDecodeError) as error:
+        argument_parser.error(str(error))
     return 2
 
 

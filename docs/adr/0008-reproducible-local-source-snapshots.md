@@ -4,6 +4,7 @@
 - **Date:** 2026-07-17
 - **Decision owner:** Victor Bilgin
 - **Related commit:** `49f4ae1` — `Add reusable local upstream source support`
+- **Superseded in part by:** [ADR-0013](0013-simplify-and-harden-cli.md) for public CLI names; snapshot invariants remain accepted
 
 ## Context
 

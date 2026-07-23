@@ -2,6 +2,26 @@
 
 Reverse-chronological record of significant project work. This is a historical index, not the source of truth for implementation details; consult `.agent/CONTEXT.md`, ADRs, the current code, tests, and Git history as appropriate.
 
+## 2026-07-22 — Simplify and harden the sndocs CLI
+
+- **Work performed by:** Codex, with direction from Victor Bilgin
+- **Commit:** `Pending`
+
+### Outcome
+
+Released the breaking 0.2 CLI contract with explicit reusable-source management, safe output replacement, clearer incremental reuse, per-run family selection, side-effect-free build planning, and deterministic human or JSON results.
+
+### Changes and decisions
+
+- Added `source clone/update/check`, consolidated local selection under `--source`, renamed reuse input to `--reuse-from`, and removed the superseded flags without aliases.
+- Required `--clean` before replacing build output, added `--dry-run` and repeatable `--family`, retained one-family smoke semantics, and shared one planner between previews and execution.
+- Routed progress to standard error, added concise summaries and single-object JSON output, detected `GITHUB_OUTPUT` automatically, documented ephemeral preview ports, and recorded the contract in ADR-0013.
+
+### Verification
+
+- Full suite passed with 85 tests and one filesystem-specific skip; focused strict production and smoke fixtures passed.
+- CLI help inspection, Python compilation, and `git diff --check` passed.
+
 ## 2026-07-19 — Repair and restyle upstream navigation cards
 
 - **Work performed by:** Codex, with direction from Victor Bilgin

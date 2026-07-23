@@ -42,6 +42,70 @@ def read_manifest(site: Path | None) -> dict:
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
 
+def plan_build(
+    settings: Settings,
+    previous_site: Path | None,
+    discovery: Discovery,
+    *,
+    build_profile: str = "production",
+) -> dict:
+    """Return the side-effect-free family reuse/rebuild/archive plan."""
+    if build_profile not in {"production", "smoke"}:
+        raise ValueError(f"unsupported build profile: {build_profile}")
+    previous = read_manifest(previous_site)
+    fingerprint = pipeline_fingerprint(settings.root)
+    previous_families = previous.get("families", {})
+    previous_profile = previous.get("build_profile", "production")
+    fingerprint_changed = previous.get("pipeline_fingerprint") != fingerprint
+    profile_changed = previous_profile != build_profile
+    actions: list[dict[str, str]] = []
+    for family in discovery.families:
+        old = previous_families.get(family, {})
+        family_path = previous_site / family if previous_site else None
+        if not previous:
+            action, reason = "rebuild", "no reusable site manifest was supplied"
+        elif fingerprint_changed:
+            action, reason = "rebuild", "pipeline fingerprint changed"
+        elif profile_changed:
+            action, reason = "rebuild", "build profile changed"
+        elif old.get("source_sha") != discovery.shas[family]:
+            reason = "new family" if not old else "source SHA changed"
+            action = "rebuild"
+        elif not family_path or not family_path.is_dir():
+            action, reason = "rebuild", "reusable family output is missing"
+        else:
+            action, reason = "reuse", "source, profile, and pipeline are unchanged"
+        actions.append({"family": family, "action": action, "reason": reason})
+    if build_profile == "production":
+        for family in previous_families:
+            family_path = previous_site / family if previous_site else None
+            if family not in discovery.families and family_path and family_path.is_dir():
+                actions.append(
+                    {"family": family, "action": "archive", "reason": "not selected in current discovery"}
+                )
+    changed_actions = any(
+        item["action"] == "rebuild"
+        or (
+            item["action"] == "archive"
+            and not previous_families.get(item["family"], {}).get("archived", False)
+        )
+        for item in actions
+    )
+    changed = (
+        fingerprint_changed
+        or profile_changed
+        or previous.get("latest") != discovery.latest
+        or changed_actions
+    )
+    return {
+        "latest": discovery.latest,
+        "build_profile": build_profile,
+        "pipeline_fingerprint": fingerprint,
+        "actions": actions,
+        "changed": changed,
+    }
+
+
 def publication_nav(
     source: Path, discovery: Discovery, resolver: FamilyLinkResolver | None = None
 ) -> list[dict]:
@@ -92,7 +156,8 @@ def _tree_size(root: Path) -> int:
 def _phase(family: str, name: str, started: float, path: Path) -> None:
     print(
         f"Build [{family}] {name}: {time.monotonic() - started:.1f}s, "
-        f"{_format_size(_tree_size(path))}"
+        f"{_format_size(_tree_size(path))}",
+        file=sys.stderr,
     )
 
 
@@ -158,13 +223,13 @@ def build_family(
     work = work_root / family
     source = work / "source"
     started = time.monotonic()
-    print(f"Build [{family}] materializing source")
+    print(f"Build [{family}] materializing source", file=sys.stderr)
     source_repository.materialize(settings, family, discovery.shas[family], source)
     _phase(family, "source ready", started, source)
     docs = work / "docs"
     resolver = FamilyLinkResolver(source / "markdown", family)
     started = time.monotonic()
-    print(f"Build [{family}] transforming Markdown")
+    print(f"Build [{family}] transforming Markdown", file=sys.stderr)
     transform_tree(
         source / "markdown",
         docs,
@@ -191,8 +256,16 @@ def build_family(
         nav=nav,
     )
     started = time.monotonic()
-    print(f"Build [{family}] rendering MkDocs site ({'search enabled' if search else 'search disabled'})")
-    subprocess.run([sys.executable, "-m", "mkdocs", "build", "--clean", "--config-file", str(config)], check=True)
+    print(
+        f"Build [{family}] rendering MkDocs site ({'search enabled' if search else 'search disabled'})",
+        file=sys.stderr,
+    )
+    subprocess.run(
+        [sys.executable, "-m", "mkdocs", "build", "--clean", "--config-file", str(config)],
+        check=True,
+        stdout=sys.stderr,
+        stderr=sys.stderr,
+    )
     _phase(family, "site ready", started, family_output)
     return link_report
 
@@ -302,27 +375,22 @@ def build_site(
             publications=discovery.publications,
             shas={discovery.latest: discovery.shas[discovery.latest]},
         )
+    plan = plan_build(settings, previous_site, discovery, build_profile=build_profile)
     previous = read_manifest(previous_site)
     previous_link_reports = read_link_reports(previous_site)
-    fingerprint = pipeline_fingerprint(settings.root)
+    fingerprint = plan["pipeline_fingerprint"]
     previous_families = previous.get("families", {})
-    previous_profile = previous.get("build_profile", "production")
-    force_all = (
-        previous.get("pipeline_fingerprint") != fingerprint
-        or previous_profile != build_profile
-    )
-    changed = force_all or previous.get("latest") != discovery.latest
+    action_by_family = {item["family"]: item for item in plan["actions"]}
+    changed = plan["changed"]
     output.mkdir(parents=True, exist_ok=True)
     family_records: dict[str, dict] = {}
     family_link_reports: dict[str, dict] = {}
 
     for family in discovery.families:
         sha = discovery.shas[family]
-        old = previous_families.get(family, {})
-        can_reuse = not force_all and old.get("source_sha") == sha and previous_site and (previous_site / family).is_dir()
-        if can_reuse:
+        if action_by_family[family]["action"] == "reuse":
             method = copy_reused_family(previous_site / family, output / family)
-            print(f"Build [{family}] reused previous output ({method})")
+            print(f"Build [{family}] reused previous output ({method})", file=sys.stderr)
             family_link_reports[family] = previous_link_reports.get(family, empty_link_report(family))
         else:
             try:
@@ -338,7 +406,7 @@ def build_site(
             finally:
                 if cleanup_work and (work / family).exists():
                     shutil.rmtree(work / family)
-                    print(f"Build [{family}] workspace removed")
+                    print(f"Build [{family}] workspace removed", file=sys.stderr)
             changed = True
         family_records[family] = {
             "source_sha": sha,
@@ -349,10 +417,15 @@ def build_site(
 
     archived_families = previous_families.items() if build_profile == "production" else ()
     for family, record in archived_families:
-        if family in family_records or not previous_site or not (previous_site / family).is_dir():
+        if (
+            family in family_records
+            or action_by_family.get(family, {}).get("action") != "archive"
+            or not previous_site
+            or not (previous_site / family).is_dir()
+        ):
             continue
         method = copy_reused_family(previous_site / family, output / family)
-        print(f"Build [{family}] retained archived output ({method})")
+        print(f"Build [{family}] retained archived output ({method})", file=sys.stderr)
         family_link_reports[family] = previous_link_reports.get(family, empty_link_report(family))
         family_records[family] = {
             **record,
@@ -414,6 +487,7 @@ limitations under the License.
             f"{documents['repaired']} repaired, {documents['missing']} missing; navigation "
             f"{navigation['exact']} exact, {navigation['repaired']} repaired, "
             f"{navigation['missing']} missing; {counts['placeholders']} placeholders; "
-            f"{images['occurrences']} omitted images ({images['targets']} targets)"
+            f"{images['occurrences']} omitted images ({images['targets']} targets)",
+            file=sys.stderr,
         )
     return manifest, changed
