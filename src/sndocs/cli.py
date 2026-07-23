@@ -16,6 +16,7 @@ from .artifacts import package_site, validate_site
 from .builder import MANIFEST_NAME, build_site, plan_build
 from .config import load_settings
 from .discovery import discover
+from .quality import STATUSES, load_quality_ruleset
 from .source import LocalSource, RemoteSource, clone_local_source, update_local_source
 from .ui_audit import audit_site_ui
 
@@ -154,6 +155,26 @@ def parser() -> argparse.ArgumentParser:
     audit_ui.add_argument("--sample-size", type=int, default=100, help="additional pages to render (default: 100)")
     audit_ui.add_argument("--seed", type=int, default=0, help="deterministic sampling seed (default: 0)")
 
+    quality = commands.add_parser(
+        "quality",
+        help="inspect and validate the packaged site-quality rules",
+        description="Validate, list, or show the human-readable site-quality ruleset.",
+        formatter_class=_Formatter,
+    )
+    _common_options(quality)
+    quality_commands = quality.add_subparsers(dest="quality_command", required=True)
+    quality_validate = quality_commands.add_parser(
+        "validate", help="validate rules and detector registration"
+    )
+    _common_options(quality_validate)
+    quality_list = quality_commands.add_parser("list", help="list quality rules")
+    _common_options(quality_list)
+    quality_list.add_argument("--status", choices=sorted(STATUSES), help="filter by lifecycle status")
+    quality_list.add_argument("--category", help="filter by ruleset category")
+    quality_show = quality_commands.add_parser("show", help="show one complete quality rule")
+    _common_options(quality_show)
+    quality_show.add_argument("rule_id", help="stable rule identifier, for example SND-NAV-001")
+
     serve = commands.add_parser(
         "serve",
         help="preview a built site with clean directory URLs",
@@ -211,6 +232,55 @@ def _write_github_output(changed: bool, latest: str) -> None:
 def _run(args: argparse.Namespace, argument_parser: argparse.ArgumentParser) -> int:
     if args.command == "serve" and getattr(args, "json", False):
         argument_parser.error("--json is not supported by serve")
+    if args.command == "quality":
+        ruleset = load_quality_ruleset()
+        if args.quality_command == "validate":
+            result = {
+                "valid": True,
+                "name": ruleset.name,
+                "schema_version": ruleset.schema_version,
+                "digest": ruleset.digest,
+                "rules": len(ruleset.rules),
+                "detectors": len(ruleset.detectors),
+            }
+            _emit(
+                args,
+                result,
+                f"Quality ruleset passed: {len(ruleset.rules)} rules, "
+                f"{len(ruleset.detectors)} detectors",
+            )
+            return 0
+        if args.quality_command == "list":
+            if args.category and args.category not in ruleset.categories:
+                argument_parser.error(
+                    f"unknown quality category: {args.category}; "
+                    f"choose from {', '.join(ruleset.categories)}"
+                )
+            rules = [
+                rule
+                for rule in sorted(ruleset.rules.values(), key=lambda item: item.id)
+                if (not args.status or rule.status == args.status)
+                and (not args.category or rule.category == args.category)
+            ]
+            if args.json:
+                print(json.dumps({"rules": [rule.summary() for rule in rules]}, indent=2))
+            else:
+                print(
+                    "\n".join(
+                        f"{rule.id}  {rule.status:<10} {rule.category:<13} "
+                        f"{rule.severity:<7} {rule.assessment:<9} {rule.title}"
+                        for rule in rules
+                    )
+                )
+            return 0
+        rule = ruleset.rules.get(args.rule_id)
+        if rule is None:
+            argument_parser.error(f"unknown quality rule: {args.rule_id}")
+        if args.json:
+            print(json.dumps(rule.to_dict(include_body=True), indent=2))
+        else:
+            print(rule.source, end="")
+        return 0
     settings = load_settings(args.config.resolve())
 
     if args.command == "source":

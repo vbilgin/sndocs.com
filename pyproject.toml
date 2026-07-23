@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 dependencies = [
+  "Markdown>=3.10,<4",
   "mkdocs-material>=9.6,<10",
   "mkdocs-minify-html-plugin>=0.3.11,<0.4",
   "PyYAML>=6.0,<7",

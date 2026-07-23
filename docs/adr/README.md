@@ -28,3 +28,4 @@ Accepted ADRs are immutable except for corrections and explicit supersession met
 - [ADR-0013: Simplify and harden the public CLI](0013-simplify-and-harden-cli.md)
 - [ADR-0014: Suppress expected omitted-navigation diagnostics](0014-suppress-omitted-navigation-diagnostics.md)
 - [ADR-0015: Audit generated UI with a local hybrid scanner](0015-local-hybrid-ui-audit.md)
+- [ADR-0016: Define site quality with packaged Markdown rules](0016-versioned-site-quality-ruleset.md)

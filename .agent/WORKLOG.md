@@ -4,6 +4,26 @@ Reverse-chronological record of significant project work. This is a historical i
 
 Older entries are archived in [.agent/worklog/2026-H2.md](worklog/2026-H2.md).
 
+## 2026-07-22 — Introduce a versioned site-quality ruleset
+
+- **Work performed by:** Codex, with direction from Victor Bilgin
+- **Commit:** `Pending`
+
+### Outcome
+
+Made packaged Markdown rules the authoritative human-readable definition of sndocs.com site quality and grouped static and browser audit evidence under stable semantic rule IDs.
+
+### Changes and decisions
+
+- Added 10 active rules, strict lifecycle and prose validation, deterministic digesting, and explicit registration for 14 detectors with confidence independent from rule severity.
+- Added `sndocs quality validate/list/show`; migrated local audit reports to schema version 2 with rule-grouped observations and an embedded active catalog.
+- Documented contribution workflow and recorded the architecture and version-1 report break in ADR-0016.
+
+### Verification
+
+- The full suite passed with 106 tests and one filesystem-specific skip; wheel coverage confirmed all ruleset resources were packaged; `git diff --check` passed.
+- The retained Australia audit scanned 49,090 pages, rendered 31 representatives at two viewports, produced five semantic rule findings with 51 screenshots, and detected all three reported defect classes without audit errors.
+
 ## 2026-07-22 — Add a local hybrid UI audit
 
 - **Work performed by:** Codex, with direction from Victor Bilgin

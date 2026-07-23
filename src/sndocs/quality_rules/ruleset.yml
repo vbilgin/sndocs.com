@@ -1,0 +1,19 @@
+schema_version: 1
+name: sndocs.com Site Quality Rules
+categories:
+  - accessibility
+  - structure
+  - render
+  - link
+  - navigation
+  - layout
+  - function
+  - performance
+severities:
+  error: Materially harms correctness, access, or core use.
+  warning: Degrades quality or indicates a likely defect.
+  info: Provides a useful improvement or diagnostic observation.
+confidence:
+  high: Deterministic or directly observed.
+  medium: Strong indication requiring review.
+  low: Heuristic candidate requiring review.

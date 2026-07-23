@@ -12,9 +12,13 @@ import threading
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from html.parser import HTMLParser
 from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urljoin, urlsplit
+
+from markdown import markdown
+
+from . import __version__
+from .quality import QualityRuleset, load_quality_ruleset
 
 MARKDOWN_LINK_RE = re.compile(r"\[[^\]\n]{1,200}\]\([^) \n]+(?:\s+[^)\n]+)?\)")
 ESCAPED_TEXT_RE = re.compile(r"\\[()[\]_*]")
@@ -62,9 +66,9 @@ def _local_target_url(page_url: str, href: str) -> str | None:
 
 
 @dataclass
-class Finding:
-    rule: str
-    severity: str
+class Observation:
+    detector_id: str
+    confidence: str
     message: str
     context: str
     representative_url: str
@@ -74,8 +78,8 @@ class Finding:
 
     def to_dict(self) -> dict:
         return {
-            "rule": self.rule,
-            "severity": self.severity,
+            "detector_id": self.detector_id,
+            "confidence": self.confidence,
             "message": self.message,
             "context": self.context,
             "representative_url": self.representative_url,
@@ -86,13 +90,13 @@ class Finding:
 
 
 class FindingStore:
-    def __init__(self) -> None:
-        self._items: dict[tuple[str, str, str, str | None], Finding] = {}
+    def __init__(self, ruleset: QualityRuleset) -> None:
+        self.ruleset = ruleset
+        self._observations: dict[tuple[str, str, str, str | None], Observation] = {}
 
     def add(
         self,
-        rule: str,
-        severity: str,
+        detector_id: str,
         message: str,
         context: str,
         page_url: str,
@@ -100,97 +104,68 @@ class FindingStore:
         viewport: str | None = None,
         screenshot: str | None = None,
         fingerprint: str | None = None,
-    ) -> Finding:
+    ) -> Observation:
+        detector = self.ruleset.detectors.get(detector_id)
+        if detector is None:
+            raise ValueError(f"unknown quality detector: {detector_id}")
         normalized = _normalized_text(context)[:500]
-        key = (rule, fingerprint or normalized, message, viewport)
-        finding = self._items.get(key)
-        if finding is None:
-            finding = Finding(
-                rule, severity, message, normalized, page_url, viewport, screenshot
+        key = (detector_id, fingerprint or normalized, message, viewport)
+        observation = self._observations.get(key)
+        if observation is None:
+            observation = Observation(
+                detector_id,
+                detector.confidence,
+                message,
+                normalized,
+                page_url,
+                viewport,
+                screenshot,
             )
-            self._items[key] = finding
-        finding.affected_pages.add(page_url)
-        if screenshot and not finding.screenshot:
-            finding.screenshot = screenshot
-        return finding
+            self._observations[key] = observation
+        observation.affected_pages.add(page_url)
+        if screenshot and not observation.screenshot:
+            observation.screenshot = screenshot
+        return observation
 
-    def items(self) -> list[Finding]:
+    def representative_urls(self) -> set[str]:
+        return {item.representative_url for item in self._observations.values()}
+
+    def findings(self) -> list[dict]:
         severity_order = {"error": 0, "warning": 1, "info": 2}
+        grouped: dict[str, list[Observation]] = defaultdict(list)
+        for observation in self._observations.values():
+            detector = self.ruleset.detectors[observation.detector_id]
+            grouped[detector.rule_id].append(observation)
+        results: list[dict] = []
+        for rule_id, observations in grouped.items():
+            rule = self.ruleset.rules[rule_id]
+            ordered = sorted(
+                observations,
+                key=lambda item: (
+                    item.detector_id,
+                    item.viewport or "",
+                    item.representative_url,
+                    item.context,
+                ),
+            )
+            affected = set().union(*(item.affected_pages for item in ordered))
+            results.append(
+                {
+                    "rule_id": rule.id,
+                    "title": rule.title,
+                    "severity": rule.severity,
+                    "assessment": rule.assessment,
+                    "affected_page_count": len(affected),
+                    "observations": [item.to_dict() for item in ordered],
+                }
+            )
         return sorted(
-            self._items.values(),
+            results,
             key=lambda item: (
-                severity_order.get(item.severity, 9),
-                item.rule,
-                item.representative_url,
+                severity_order.get(item["severity"], 9),
+                item["rule_id"],
             ),
         )
-
-
-class StructuralParser(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
-        self.stack: list[str] = []
-        self.text_nodes: list[tuple[str, str]] = []
-        self.links: list[tuple[str, str, str]] = []
-        self._link_href: str | None = None
-        self._link_text: list[str] = []
-        self._nav_depth = 0
-        self._nav_group_counter = 0
-        self._nav_groups: list[int] = []
-        self._nav_links: list[tuple[str, str, int]] = []
-        self.has_table = False
-        self.has_nav = False
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        attributes = dict(attrs)
-        self.stack.append(tag)
-        if tag == "table":
-            self.has_table = True
-        if tag == "nav":
-            self.has_nav = True
-            self._nav_depth += 1
-        if tag == "ul" and self._nav_depth:
-            self._nav_group_counter += 1
-            self._nav_groups.append(self._nav_group_counter)
-        if tag == "a":
-            self._link_href = attributes.get("href") or ""
-            self._link_text = []
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag == "a" and self._link_href is not None:
-            text = _normalized_text("".join(self._link_text))
-            context = self.stack[-2] if len(self.stack) > 1 else "a"
-            self.links.append((self._link_href, text, context))
-            if self._nav_depth and self._nav_groups:
-                self._nav_links.append((text, self._link_href, self._nav_groups[-1]))
-            self._link_href = None
-            self._link_text = []
-        if tag == "nav" and self._nav_depth:
-            self._nav_depth -= 1
-        if tag == "ul" and self._nav_groups:
-            self._nav_groups.pop()
-        if tag in self.stack:
-            index = len(self.stack) - 1 - self.stack[::-1].index(tag)
-            del self.stack[index:]
-
-    def handle_data(self, data: str) -> None:
-        if not data.strip() or any(tag in {"script", "style"} for tag in self.stack):
-            return
-        context = " > ".join(self.stack[-4:])
-        self.text_nodes.append((data, context))
-        if self._link_href is not None:
-            self._link_text.append(data)
-
-    def duplicate_nav_links(self) -> list[tuple[str, str]]:
-        counts: dict[tuple[int, str, str], int] = defaultdict(int)
-        for label, href, depth in self._nav_links:
-            if label:
-                counts[(depth, label.casefold(), href)] += 1
-        return [
-            (label, href)
-            for (_, label, href), count in counts.items()
-            if count > 1
-        ]
 
 
 @dataclass
@@ -227,8 +202,7 @@ def structural_audit(site: Path, findings: FindingStore) -> StaticAudit:
             markdown_matches = MARKDOWN_LINK_RE.findall(visible)
             for markdown_match in markdown_matches:
                 findings.add(
-                    "visible-markdown-link",
-                    "error",
+                    "static.visible-markdown-link",
                     "Markdown link syntax is visible in rendered text.",
                     markdown_match,
                     page_url,
@@ -240,8 +214,7 @@ def structural_audit(site: Path, findings: FindingStore) -> StaticAudit:
             ):
                 for escaped_match in ESCAPED_TEXT_RE.findall(visible):
                     findings.add(
-                        "visible-markdown-escape",
-                        "warning",
+                        "static.visible-markdown-escape",
                         "Markdown escape syntax is visible in navigation or link text.",
                         escaped_match,
                         page_url,
@@ -261,8 +234,7 @@ def structural_audit(site: Path, findings: FindingStore) -> StaticAudit:
                 for (label, href), count in counts.items():
                     if count > 1:
                         findings.add(
-                            "duplicate-navigation-entry",
-                            "warning",
+                            "static.duplicate-navigation-entry",
                             "The rendered navigation repeats the same label and destination.",
                             f"{label} -> {href}",
                             page_url,
@@ -279,8 +251,7 @@ def structural_audit(site: Path, findings: FindingStore) -> StaticAudit:
             is_local = not parsed_href.scheme and not parsed_href.netloc
             if is_local and RAW_MARKDOWN_HREF_RE.search(href):
                 findings.add(
-                    "raw-markdown-destination",
-                    "error",
+                    "static.raw-markdown-destination",
                     "A generated link still targets a Markdown file.",
                     f"{label} -> {href}",
                     page_url,
@@ -295,21 +266,19 @@ def structural_audit(site: Path, findings: FindingStore) -> StaticAudit:
             if target is not None:
                 if target not in all_files:
                     findings.add(
-                        "missing-local-target",
-                        "error",
+                        "static.missing-local-target",
                         "A same-site link target does not exist.",
                         f"{label} -> {href}",
                         page_url,
                     )
             if MARKDOWN_LINK_RE.search(label):
                 findings.add(
-                    "suspicious-link-label",
-                    "error",
+                    "static.suspicious-link-label",
                     "A link label contains Markdown link syntax.",
                     label,
                     page_url,
                 )
-    high_risk.update(item.representative_url for item in findings.items())
+    high_risk.update(findings.representative_urls())
     return StaticAudit(pages, high_risk, table_pages, nav_pages)
 
 
@@ -434,48 +403,47 @@ def browser_audit(
                                   };
                                 }"""
                             )
-                            detected: list[tuple[str, str, str, str]] = []
+                            detected: list[tuple[str, str, str]] = []
                             if result["documentOverflow"]:
                                 detected.append((
-                                    "horizontal-page-overflow", "error",
+                                    "browser.horizontal-page-overflow",
                                     "The page is wider than its viewport.", "document"
                                 ))
                             for item in result["clipped"]:
                                 detected.append((
-                                    "clipped-content", "warning",
+                                    "browser.clipped-content",
                                     "A visible table, navigation, or content container overflows horizontally.",
                                     json.dumps(item, sort_keys=True),
                                 ))
                             for item in result["markdown"]:
                                 detected.append((
-                                    "browser-visible-markdown", "error",
+                                    "browser.visible-markdown-link",
                                     "The browser exposes Markdown link syntax.", item
                                 ))
                             for item in result["escapes"]:
                                 detected.append((
-                                    "browser-visible-escape", "warning",
+                                    "browser.visible-markdown-escape",
                                     "The browser exposes Markdown escape syntax in navigation.", item
                                 ))
                             for item in result["duplicates"]:
                                 detected.append((
-                                    "browser-duplicate-navigation", "warning",
+                                    "browser.duplicate-navigation-entry",
                                     "Visible sibling navigation entries are duplicated.", item
                                 ))
                             for item in page_errors:
-                                detected.append(("page-error", "error", "A page error occurred.", item))
+                                detected.append(("browser.page-error", "A page error occurred.", item))
                             for item in console_errors:
-                                detected.append(("console-error", "warning", "The console logged an error.", item))
+                                detected.append(("browser.console-error", "The console logged an error.", item))
                             for item in failed_resources:
-                                detected.append(("failed-resource", "error", "A browser resource failed to load.", item))
+                                detected.append(("browser.failed-resource", "A browser resource failed to load.", item))
                             if detected:
-                                first_rule = detected[0][0]
-                                filename = _screenshot_name(page_url, viewport_name, first_rule)
+                                first_detector = detected[0][0]
+                                filename = _screenshot_name(page_url, viewport_name, first_detector)
                                 page.screenshot(path=str(screenshots / filename))
                                 relative_shot = f"screenshots/{filename}"
-                                for rule, severity, message, detail in detected:
+                                for detector_id, message, detail in detected:
                                     findings.add(
-                                        rule,
-                                        severity,
+                                        detector_id,
                                         message,
                                         detail,
                                         page_url,
@@ -497,23 +465,49 @@ def browser_audit(
     return rendered
 
 
-def _report_html(report: dict) -> str:
+def _report_html(report: dict, ruleset: QualityRuleset) -> str:
     cards = []
     for finding in report["findings"]:
-        screenshot = (
-            f'<p><a href="{html.escape(finding["screenshot"])}">View screenshot</a></p>'
-            if finding["screenshot"]
-            else ""
-        )
+        observations = []
+        for observation in finding["observations"]:
+            screenshot = (
+                f'<p><a href="{html.escape(observation["screenshot"])}">View screenshot</a></p>'
+                if observation["screenshot"]
+                else ""
+            )
+            viewport = (
+                f' · {html.escape(observation["viewport"])}'
+                if observation["viewport"]
+                else ""
+            )
+            observations.append(
+                f'<section class="observation"><h3>{html.escape(observation["detector_id"])}</h3>'
+                f'<p><strong>Confidence: {html.escape(observation["confidence"])}</strong>'
+                f'{viewport} · {observation["affected_page_count"]} affected page(s)</p>'
+                f'<p>{html.escape(observation["message"])}</p>'
+                f'<p><code>{html.escape(observation["representative_url"])}</code></p>'
+                f'<pre>{html.escape(observation["context"])}</pre>{screenshot}</section>'
+            )
+        rule = ruleset.rules[finding["rule_id"]]
         cards.append(
             f'<article class="{finding["severity"]}">'
-            f'<h2>{html.escape(finding["rule"])}</h2>'
+            f'<h2>{html.escape(finding["rule_id"])} — {html.escape(finding["title"])}</h2>'
             f'<p><strong>{html.escape(finding["severity"].upper())}</strong> · '
             f'{finding["affected_page_count"]} affected page(s)</p>'
-            f'<p>{html.escape(finding["message"])}</p>'
-            f'<p><code>{html.escape(finding["representative_url"])}</code></p>'
-            f'<pre>{html.escape(finding["context"])}</pre>{screenshot}</article>'
+            f'<p>{html.escape(rule.sections["Requirement"])}</p>'
+            f'{"".join(observations)}'
+            f'<details><summary>Rule definition</summary>{markdown(rule.body)}</details></article>'
         )
+    unevaluated = [
+        rule
+        for rule in sorted(ruleset.rules.values(), key=lambda item: item.id)
+        if rule.status == "active" and rule.assessment != "automated"
+    ]
+    unevaluated_html = "".join(
+        f"<li><strong>{html.escape(rule.id)}</strong> — {html.escape(rule.title)} "
+        f"({html.escape(rule.assessment)})</li>"
+        for rule in unevaluated
+    )
     errors = "".join(f"<li>{html.escape(item)}</li>" for item in report["errors"])
     return f"""<!doctype html>
 <meta charset="utf-8">
@@ -523,12 +517,15 @@ def _report_html(report: dict) -> str:
 body{{font:16px/1.5 system-ui;max-width:78rem;margin:auto;padding:2rem;background:#faf7f2;color:#262626}}
 header,article{{background:white;border:1px solid #ddd;border-radius:.4rem;padding:1rem 1.25rem;margin:1rem 0}}
 article.error{{border-left:.35rem solid #d7263d}}article.warning{{border-left:.35rem solid #ff8c42}}
+.observation{{border-top:1px solid #ddd;margin-top:1rem;padding-top:.5rem}}
 pre{{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f1ed;padding:.75rem}}a{{color:#6a4cff}}
 </style>
 <header><h1>sndocs UI audit</h1>
-<p>{report["coverage"]["html_pages"]} HTML pages scanned; {report["coverage"]["browser_renders"]} browser renders; {len(report["findings"])} findings.</p>
+<p>{report["coverage"]["html_pages"]} HTML pages scanned; {report["coverage"]["browser_renders"]} browser renders; {len(report["findings"])} rule finding(s).</p>
+<p>Ruleset <code>{html.escape(report["ruleset"]["digest"])}</code></p>
 </header>
 <section>{"".join(cards) or "<p>No findings.</p>"}</section>
+<section><h2>Active rules not automatically evaluated</h2><ul>{unevaluated_html or "<li>None</li>"}</ul></section>
 <section><h2>Audit errors</h2><ul>{errors or "<li>None</li>"}</ul></section>
 """
 
@@ -544,14 +541,15 @@ def audit_site_ui(
     if not site.is_dir() or not manifest_path.is_file():
         raise ValueError(f"site has no build-manifest.json: {site}")
     json.loads(manifest_path.read_text(encoding="utf-8"))
-    findings = FindingStore()
+    ruleset = load_quality_ruleset()
+    findings = FindingStore(ruleset)
     static = structural_audit(site, findings)
     selected = select_pages(static, sample_size, seed)
     output.mkdir(parents=True)
     errors: list[str] = []
     browser_renders = browser_audit(site, output, selected, findings, errors)
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "site": str(site),
         "configuration": {
@@ -559,17 +557,24 @@ def audit_site_ui(
             "seed": seed,
             "viewports": VIEWPORTS,
         },
+        "ruleset": {
+            "schema_version": ruleset.schema_version,
+            "package_version": __version__,
+            "name": ruleset.name,
+            "digest": ruleset.digest,
+            "rules": ruleset.catalog(active_only=True),
+        },
         "coverage": {
             "html_pages": len(static.pages),
             "high_risk_pages": len(static.high_risk_pages),
             "selected_pages": len(selected),
             "browser_renders": browser_renders,
         },
-        "findings": [item.to_dict() for item in findings.items()],
+        "findings": findings.findings(),
         "errors": errors,
     }
     (output / "findings.json").write_text(
         json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
-    (output / "index.html").write_text(_report_html(report), encoding="utf-8")
+    (output / "index.html").write_text(_report_html(report, ruleset), encoding="utf-8")
     return report

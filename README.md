@@ -116,6 +116,25 @@ preserved unless `--clean` is supplied. A production family can take several min
 though only selected pages are opened in Chromium; generated reports are local artifacts and
 should not be committed.
 
+The schema-version-2 report groups observations from static and browser detectors under stable
+semantic rule IDs. Rule severity describes impact, while detector confidence describes how
+certain each observation is. Every report records the packaged ruleset schema, package version,
+active-rule catalog, and deterministic ruleset digest.
+
+Inspect and validate the packaged human-readable quality rules:
+
+```shell
+.venv/bin/sndocs quality validate
+.venv/bin/sndocs quality list
+.venv/bin/sndocs quality show SND-NAV-001
+```
+
+Rules live in `src/sndocs/quality_rules/rules/` as Markdown with strict YAML frontmatter. Start new
+rules as drafts, define their requirement and applicability with passing and failing examples, and
+register a tested detector before activating an automated rule. Detector implementation details
+remain in Python. Rule IDs are permanent and retired IDs are never reused; contributor instructions
+and lifecycle guidance are in `src/sndocs/quality_rules/README.md`.
+
 ## Output contract
 
 The assembled site contains:

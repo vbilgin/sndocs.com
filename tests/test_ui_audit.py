@@ -10,6 +10,7 @@ from sndocs.ui_audit import (
     select_pages,
     structural_audit,
 )
+from sndocs.quality import load_quality_ruleset
 
 
 def _site(tmp_path: Path) -> Path:
@@ -38,18 +39,25 @@ def test_structural_audit_detects_and_deduplicates_problem_patterns(tmp_path):
     target = site / "target"
     target.mkdir()
     target.joinpath("index.html").write_text("<p>ok</p>", encoding="utf-8")
-    findings = FindingStore()
+    findings = FindingStore(load_quality_ruleset())
 
     result = structural_audit(site, findings)
-    by_rule = {item.rule: item for item in findings.items()}
+    by_rule = {item["rule_id"]: item for item in findings.findings()}
 
     assert len(result.pages) == 3
     assert len(result.high_risk_pages) == 1
-    assert by_rule["visible-markdown-link"].affected_pages == {"/one/", "/two/"}
-    assert by_rule["visible-markdown-escape"].severity == "warning"
-    assert by_rule["raw-markdown-destination"].severity == "error"
-    assert by_rule["missing-local-target"].affected_pages == {"/one/", "/two/"}
-    assert by_rule["duplicate-navigation-entry"].context == "repeated -> ../target/"
+    assert by_rule["SND-RENDER-001"]["affected_page_count"] == 2
+    render_detectors = {
+        item["detector_id"] for item in by_rule["SND-RENDER-001"]["observations"]
+    }
+    assert render_detectors == {"static.visible-markdown-link"}
+    assert by_rule["SND-RENDER-001"]["observations"][0]["affected_page_count"] == 2
+    assert by_rule["SND-RENDER-002"]["severity"] == "warning"
+    assert by_rule["SND-LINK-001"]["severity"] == "error"
+    assert by_rule["SND-LINK-002"]["affected_page_count"] == 2
+    nav_observation = by_rule["SND-NAV-001"]["observations"][0]
+    assert nav_observation["context"] == "repeated -> ../target/"
+    assert nav_observation["confidence"] == "medium"
 
 
 def test_sampling_is_deterministic_and_keeps_high_risk_pages():
@@ -85,10 +93,22 @@ def test_browser_audit_writes_report_and_remains_report_only(tmp_path):
 
     report = audit_site_ui(site, output, sample_size=0, seed=0)
 
-    rules = {item["rule"] for item in report["findings"]}
-    assert "visible-markdown-link" in rules
-    assert "duplicate-navigation-entry" in rules
-    assert "horizontal-page-overflow" in rules
+    rules = {item["rule_id"] for item in report["findings"]}
+    assert {"SND-RENDER-001", "SND-NAV-001", "SND-LAYOUT-001"} <= rules
+    observations = [
+        observation
+        for finding in report["findings"]
+        for observation in finding["observations"]
+    ]
+    detector_ids = {item["detector_id"] for item in observations}
+    assert "static.visible-markdown-link" in detector_ids
+    assert "browser.visible-markdown-link" in detector_ids
+    assert "browser.horizontal-page-overflow" in detector_ids
+    assert all(item["confidence"] in {"high", "medium", "low"} for item in observations)
+    assert report["schema_version"] == 2
+    assert report["ruleset"]["schema_version"] == 1
+    assert len(report["ruleset"]["digest"]) == 64
+    assert len(report["ruleset"]["rules"]) == 10
     assert report["coverage"]["html_pages"] == 1
     assert report["coverage"]["browser_renders"] == 2
     assert (output / "findings.json").is_file()
