@@ -66,3 +66,11 @@
 .site-disclaimer a:is(:focus, :hover) { color: #faf7f2; opacity: 1; }
 .family-selector { max-width: 10rem; margin-left: .6rem; padding: .25rem; border: 1px solid rgb(38 38 38 / 45%); border-radius: .15rem; color: #262626; background: #faf7f2; }
 .family-selector:focus-visible { border-color: #6a4cff; outline: .15rem solid #6a4cff; outline-offset: .1rem; }
+.md-content, .md-typeset { min-width: 0; }
+.md-typeset table { display: block; max-width: 100%; overflow-x: auto; }
+.md-typeset pre { max-width: 100%; overflow-x: auto; }
+.md-typeset :not(pre) > code, .md-typeset a { overflow-wrap: anywhere; }
+@media screen and (max-width: 44.984375em) {
+  .md-typeset li > :is(ul, ol) { margin-left: 0; padding-left: .35rem; }
+  .md-typeset li > :is(ul, ol) > li { margin-left: 0; }
+}

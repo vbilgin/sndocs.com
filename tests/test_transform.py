@@ -3,7 +3,14 @@ from pathlib import PurePosixPath
 import pytest
 
 from sndocs.links import FamilyLinkResolver
-from sndocs.transform import split_frontmatter, transform_document, transform_navigation_cards, transform_tree
+from sndocs.transform import (
+    split_frontmatter,
+    transform_document,
+    transform_navigation_cards,
+    normalize_fenced_code_boundaries,
+    transform_table_markdown,
+    transform_tree,
+)
 
 
 def test_transform_keeps_metadata_rewrites_links_and_enriches_images():
@@ -49,6 +56,18 @@ keywords: [AIOps, ITOM]
     assert metadata["release"] == "australia"
     assert metadata["keywords"] == ["AIOps", "ITOM"]
     assert body == "# Requirements\n"
+
+
+def test_markdown_escapes_are_removed_from_rendered_page_title_metadata():
+    result = transform_document(
+        "---\ntitle: API \\(g\\_aw\\) \\[client\\] \\*\n---\n# API",
+        "australia",
+        PurePosixPath("pub/api.md"),
+        {"australia"},
+        "source",
+    )
+    metadata, _ = split_frontmatter(result)
+    assert metadata["title"] == "API (g_aw) [client] *"
 
 
 def test_unknown_family_link_is_preserved():
@@ -168,6 +187,37 @@ def test_navigation_cards_rewrite_family_links_and_drop_empty_cells():
     assert "[ServiceNow Vault" not in result
 
 
+def test_navigation_card_without_alt_text_marker_is_still_recovered():
+    text = '''<table class="nav-card"><tr><td>
+[Developer \\[Omitted image "developer.png"\\] Build apps with code.](developer.md)
+</td></tr></table>'''
+    result = transform_navigation_cards(text, PurePosixPath("pub/index.md"))
+    assert '<strong class="nav-card__title">Developer</strong>' in result
+    assert '<span class="nav-card__description">Build apps with code.</span>' in result
+
+
+def test_navigation_card_grid_can_include_non_linked_informational_card():
+    text = '''<table class="nav-card"><tr><td>
+[Linked \\[Omitted image "linked.png"\\] Alt text: Linked details.](linked.md)
+</td><td>
+Information \\[Omitted image "info.png"\\] Alt text: Informational details.
+</td></tr></table>'''
+    result = transform_navigation_cards(text, PurePosixPath("pub/index.md"))
+    assert result.count('class="nav-card__item"') == 2
+    assert result.count("<a ") == 1
+    assert '<strong class="nav-card__title">Information</strong>' in result
+
+
+def test_navigation_card_recovers_link_before_omitted_image():
+    text = '''<table class="nav-card"><tr><td>
+[Install](install.md)\\[Omitted image "install.png"\\] Alt text:Install the integration
+</td></tr></table>'''
+    result = transform_navigation_cards(text, PurePosixPath("pub/index.md"))
+    assert 'href="install/"' in result
+    assert '<strong class="nav-card__title">Install</strong>' in result
+    assert '<span class="nav-card__description">Install the integration</span>' in result
+
+
 def test_navigation_card_uses_resolver_repaired_target(tmp_path):
     markdown = tmp_path / "markdown"
     source = markdown / "pub" / "source.md"
@@ -208,3 +258,117 @@ def test_ordinary_omitted_image_and_non_navigation_table_keep_existing_behavior(
     )
     assert '<table><tr><td>' in result
     assert "Image omitted" in result and "Plain notice" in result
+
+
+def test_inline_markdown_in_ordinary_html_table_cells_is_rendered():
+    text = """<table><tr><th>Details</th><td>
+See [Domain scope](../security/domain.md) and **review the requirements**.
+</td></tr></table>"""
+
+    result = transform_document(
+        text,
+        "australia",
+        PurePosixPath("api/page.md"),
+        {"australia"},
+        "source",
+    )
+
+    assert '<a href="../../security/domain/">Domain scope</a>' in result
+    assert "<strong>review the requirements</strong>" in result
+    assert "[Domain scope]" not in result
+
+
+def test_indented_list_markdown_inside_table_cell_does_not_become_code():
+    table = """<table><tr><td>
+**Note:** Values are populated if:
+
+    -   See [Data source](data.md).
+    -   See [Mapper](mapper.md).
+</td></tr></table>"""
+
+    result = transform_table_markdown(table, PurePosixPath("pub/page.md"))
+
+    assert "<ul>" in result
+    assert "<pre><code>" not in result
+    assert 'href="../data/"' in result
+
+
+def test_fenced_code_inside_table_cell_is_consumed_locally():
+    table = """<table><tr><td>
+Example:
+```
+value = "[not a link](example.md)"
+```
+</td></tr></table>"""
+    result = transform_table_markdown(table, PurePosixPath("pub/page.md"))
+    assert "<div class=\"highlight\">" in result
+    assert result.count("```") == 0
+
+
+def test_markdown_table_nested_inside_raw_table_gets_real_links():
+    table = """<table><tr><td>
+<table><tr><td>Inner</td></tr></table>
+|API|Details|
+|---|---|
+|[Attachment API](https://example.com/api)|Changed|
+</td></tr></table>"""
+    result = transform_table_markdown(table, PurePosixPath("pub/page.md"))
+    assert '<a href="https://example.com/api">Attachment API</a>' in result
+    assert "[Attachment API]" not in result
+
+
+def test_table_markdown_uses_link_resolver_and_records_repair(tmp_path):
+    markdown_root = tmp_path / "markdown"
+    current = markdown_root / "pub" / "page.md"
+    target = markdown_root / "pub" / "moved" / "target.md"
+    current.parent.mkdir(parents=True)
+    target.parent.mkdir(parents=True)
+    current.write_text("# Page", encoding="utf-8")
+    target.write_text("# Target", encoding="utf-8")
+    resolver = FamilyLinkResolver(markdown_root, "australia")
+
+    result = transform_table_markdown(
+        "<table><tr><td>[Target](old/target.md)</td></tr></table>",
+        PurePosixPath("pub/page.md"),
+        resolver,
+    )
+
+    assert 'href="../moved/target/"' in result
+    assert resolver.report()["counts"]["document_links"]["repaired"] == 1
+
+
+def test_unrecognized_navigation_card_is_not_changed_by_table_markdown():
+    table = '<table class="presentation nav-card"><tr><td>[Ordinary](target.md)</td></tr></table>'
+    assert transform_table_markdown(table, PurePosixPath("pub/page.md")) == table
+
+
+def test_plain_and_malformed_table_cells_are_preserved():
+    table = "<table><tr><td>Plain [unfinished text</td><td>C:\\temp</td></tr></table>"
+    assert transform_table_markdown(table, PurePosixPath("pub/page.md")) == table + "\n\n"
+
+
+def test_table_closing_tag_is_separated_from_following_markdown():
+    result = transform_table_markdown(
+        "<table><tr><td>Value</td></tr></table>## Next heading",
+        PurePosixPath("pub/page.md"),
+    )
+    assert "</table>\n\n## Next heading" in result
+
+
+def test_fenced_code_markers_receive_block_boundaries():
+    text = "Before ```python\ncode\n```\n## After\n"
+    assert normalize_fenced_code_boundaries(text) == (
+        "Before\n\n```python\ncode\n\n```\n## After\n"
+    )
+
+
+def test_split_navigation_card_markup_becomes_one_semantic_card():
+    text = """<table class="nav-card"><tr><td>
+[Use](use.md)
+[\\[Omitted image "use.svg"\\] Alt text:](use.md)
+[Learn how to use the workspace](use.md)
+</td></tr></table>"""
+    result = transform_navigation_cards(text, PurePosixPath("pub/index.md"))
+    assert result.count('class="nav-card__item"') == 1
+    assert '<strong class="nav-card__title">Use</strong>' in result
+    assert '<span class="nav-card__description">Learn how to use the workspace</span>' in result

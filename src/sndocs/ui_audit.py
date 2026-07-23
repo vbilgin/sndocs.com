@@ -38,6 +38,10 @@ HREF_RE = re.compile(
     re.IGNORECASE,
 )
 TAG_RE = re.compile(r"<[^>]+>")
+NON_PROSE_RE = re.compile(
+    r"<(?:pre|code|script|style)\b[^>]*>.*?</(?:pre|code|script|style)\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 def _audit_paths_overlap(site: Path, output: Path) -> bool:
@@ -209,7 +213,8 @@ def structural_audit(site: Path, findings: FindingStore) -> StaticAudit:
             nav_pages.add(page_url)
         for section in sections:
             section_source = section.group(0)
-            visible = _normalized_text(html.unescape(TAG_RE.sub(" ", section_source)))
+            prose_source = NON_PROSE_RE.sub(" ", section_source)
+            visible = _normalized_text(html.unescape(TAG_RE.sub(" ", prose_source)))
             markdown_matches = MARKDOWN_LINK_RE.findall(visible)
             for markdown_match in markdown_matches:
                 findings.add(
@@ -382,9 +387,10 @@ def browser_audit(
                                     return s.display !== "none" && s.visibility !== "hidden" &&
                                       r.width > 0 && r.height > 0;
                                   };
-                                  const selectors = "table, nav, .md-content, .md-typeset";
+                                  const selectors = "table, .md-content, .md-typeset";
                                   const clipped = [...document.querySelectorAll(selectors)]
                                     .filter(visible)
+                                    .filter(e => ["hidden", "clip"].includes(getComputedStyle(e).overflowX))
                                     .filter(e => e.scrollWidth > e.clientWidth + 2)
                                     .map(e => ({
                                       tag: e.tagName.toLowerCase(),
@@ -392,8 +398,27 @@ def browser_audit(
                                       scrollWidth: e.scrollWidth,
                                       clientWidth: e.clientWidth
                                     }));
-                                  const text = document.body.innerText;
-                                  const markdown = text.match(/\\[[^\\]\\n]{1,200}\\]\\([^)\\s]+(?:\\s+[^)\\n]+)?\\)/g) || [];
+                                  const prose = document.body.cloneNode(true);
+                                  prose.querySelectorAll("pre, code, script, style").forEach(e => e.remove());
+                                  const proseText = prose.innerText;
+                                  const insideScroller = e => {
+                                    for (let p = e.parentElement; p; p = p.parentElement) {
+                                      if (["auto", "scroll"].includes(getComputedStyle(p).overflowX))
+                                        return true;
+                                    }
+                                    return false;
+                                  };
+                                  const viewportOverflow = [...document.body.querySelectorAll("*")]
+                                    .filter(visible)
+                                    .filter(e => !e.closest("nav, .md-top"))
+                                    .filter(e => getComputedStyle(e).position !== "fixed")
+                                    .filter(e => !insideScroller(e))
+                                    .some(e => {
+                                      const r = e.getBoundingClientRect();
+                                      return r.right > document.documentElement.clientWidth + 2 ||
+                                        r.left < -2;
+                                    });
+                                  const markdown = proseText.match(/\\[[^\\]\\n]{1,200}\\]\\([^)\\s]+(?:\\s+[^)\\n]+)?\\)/g) || [];
                                   const escapes = [...document.querySelectorAll("nav a")]
                                     .map(e => e.innerText.trim())
                                     .filter(t => /\\\\[()[\\]_*]/.test(t));
@@ -408,8 +433,7 @@ def browser_audit(
                                     }
                                   }
                                   return {
-                                    documentOverflow: document.documentElement.scrollWidth >
-                                      document.documentElement.clientWidth + 2,
+                                    documentOverflow: viewportOverflow,
                                     clipped, markdown, escapes, duplicates
                                   };
                                 }"""

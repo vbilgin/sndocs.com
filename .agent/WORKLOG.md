@@ -4,6 +4,31 @@ Reverse-chronological record of significant project work. This is a historical i
 
 Older entries are archived in [.agent/worklog/2026-H2.md](worklog/2026-H2.md).
 
+## 2026-07-22 — Normalize malformed upstream presentation
+
+- **Work performed by:** Codex, with direction from Victor Bilgin
+- **Committed by:** Victor Bilgin
+- **Commit:** `Normalize malformed upstream presentation` (intended subject)
+
+### Outcome
+
+Added deterministic source-layer recovery for the malformed upstream presentation patterns cataloged during Australia UI auditing, improved responsive containment and detector precision, and retained a final diagnostic build and report for manual review without imposing a zero-finding gate.
+
+### Changes and decisions
+
+- Added deterministic recovery for Markdown inside raw and nested HTML tables, malformed inline fenced-code boundaries, linked, split-link, missing-alt-marker, and mixed linked/informational navigation cards, while preserving unfamiliar structures.
+- Normalized recognized Markdown escapes in navigation and page-title metadata; retained the first navigation occurrence of each resolved destination because Material renders repeated destinations with the canonical page title.
+- Added responsive table, code, link, and deeply nested mobile-list containment; refined browser clipping and viewport checks to ignore intentional Material navigation, fixed controls, responsive scroll containers, and Markdown syntax inside explicit code examples.
+- Added upstream-shaped transformation, navigation, rendering, and audit regression fixtures covering every discovered pattern; no public CLI, report schema, configuration, or artifact contract changed.
+- Recorded the normalization boundaries, navigation canonicalization, responsive policy, and report-only audit posture in ADR-0018.
+
+### Verification
+
+- The full suite passed with 123 tests and one filesystem-specific skip; `git diff --check` passed.
+- The final strict Australia smoke render from retained workspace inputs at upstream SHA `0dfa6b2` completed in 243.74 seconds with only the 20 known informational stale-anchor messages.
+- The retained UI audit scanned 49,089 HTML pages, rendered 143 selected pages at desktop and mobile viewports, and produced 9 grouped findings, 286 screenshots, and no audit errors. Findings remain available for manual review and were not used as an acceptance gate.
+- A complete current-family production build, package validation, and Release publication remain deferred.
+
 ## 2026-07-22 — Reconcile ADR and agent records
 
 - **Work performed by:** Codex, with direction from Victor Bilgin

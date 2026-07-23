@@ -61,6 +61,17 @@ def test_structural_audit_detects_and_deduplicates_problem_patterns(tmp_path):
     assert nav_observation["confidence"] == "medium"
 
 
+def test_structural_audit_ignores_markdown_syntax_in_code_examples(tmp_path):
+    site = _site(tmp_path)
+    (site / "index.html").write_text(
+        "<table><tr><td><pre><code>[Example](source.md)</code></pre></td></tr></table>",
+        encoding="utf-8",
+    )
+    findings = FindingStore(load_quality_ruleset())
+    structural_audit(site, findings)
+    assert all(item["rule_id"] != "SND-RENDER-001" for item in findings.findings())
+
+
 def test_sampling_is_deterministic_and_keeps_high_risk_pages():
     audit = StaticAudit(
         pages=[f"/{number}/" for number in range(10)],
@@ -114,9 +125,13 @@ def test_browser_audit_writes_report_and_remains_report_only(tmp_path):
     (site / "index.html").write_text(
         """<!doctype html><style>
         .wide { width: 900px }
+        .intentional-nav-overflow { width: 100px; overflow: hidden }
+        .intentional-nav-overflow ul { width: 500px }
         </style><nav><ul>
         <li><a href="/">Duplicate</a></li><li><a href="/">Duplicate</a></li>
-        </ul></nav><main><table class="wide"><tr><td>[Visible](missing.md)</td></tr></table></main>""",
+        </ul></nav>
+        <nav class="intentional-nav-overflow"><ul><li>Sliding Material navigation</li></ul></nav>
+        <main><table class="wide"><tr><td>[Visible](missing.md)</td></tr></table></main>""",
         encoding="utf-8",
     )
     output = tmp_path / "report"
@@ -134,6 +149,12 @@ def test_browser_audit_writes_report_and_remains_report_only(tmp_path):
     assert "static.visible-markdown-link" in detector_ids
     assert "browser.visible-markdown-link" in detector_ids
     assert "browser.horizontal-page-overflow" in detector_ids
+    clipped_contexts = {
+        item["context"]
+        for item in observations
+        if item["detector_id"] == "browser.clipped-content"
+    }
+    assert all('"tag": "nav"' not in context for context in clipped_contexts)
     assert all(item["confidence"] in {"high", "medium", "low"} for item in observations)
     assert report["schema_version"] == 2
     assert report["ruleset"]["schema_version"] == 1

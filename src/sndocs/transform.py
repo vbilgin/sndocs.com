@@ -5,10 +5,12 @@ import os
 import posixpath
 import re
 import shutil
+import textwrap
 from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlparse
 
 import yaml
+from markdown import markdown
 
 from .links import FamilyLinkResolver
 from .metadata import split_frontmatter
@@ -29,10 +31,29 @@ NAV_CARD_TABLE_RE = re.compile(
 NAV_CARD_CELL_RE = re.compile(r"<td\b[^>]*>(.*?)</td\s*>", re.IGNORECASE | re.DOTALL)
 NAV_CARD_LINK_RE = re.compile(
     r'^\s*\[(?P<title>.*?)\\?\[Omitted image\s+["“](?P<image>[^"”]+)["”]\\?\]'
-    r'\s*Alt text:\s*(?P<description>.*?)\]\((?P<target>[^\s)]+)\)\s*$',
+    r'\s*(?:Alt text:\s*)?(?P<description>.*?)\]\((?P<target>[^\s)]+)\)\s*$',
+    re.IGNORECASE | re.DOTALL,
+)
+NAV_CARD_SPLIT_RE = re.compile(
+    r"^\s*\[(?P<title>[^]\n]+)]\((?P<target>[^\s)]+)\)\s*"
+    r"\[\\?\[Omitted image\s+[\"“][^\"”]+[\"”]\\?]\s*Alt text:\s*]\((?P=target)\)\s*"
+    r"\[(?P<description>[^]\n]+)]\((?P=target)\)\s*$",
+    re.IGNORECASE | re.DOTALL,
+)
+NAV_CARD_STATIC_RE = re.compile(
+    r'^\s*(?P<title>.*?)\\?\[Omitted image\s+[\"“][^\"”]+[\"”]\\?]'
+    r"\s*(?:Alt text:\s*)?(?P<description>.*?)\s*$",
     re.IGNORECASE | re.DOTALL,
 )
 HTML_ID_RE = re.compile(r'\bid\s*=\s*(["\'])(?P<value>.*?)\1', re.IGNORECASE | re.DOTALL)
+TABLE_RE = re.compile(r"<table\b(?P<attrs>[^>]*)>(?P<body>.*?)</table\s*>", re.IGNORECASE | re.DOTALL)
+TABLE_CELL_RE = re.compile(
+    r"<(?P<tag>td|th)\b(?P<attrs>[^>]*)>(?P<body>.*?)</(?P=tag)\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
+INLINE_MARKDOWN_LINK_RE = re.compile(
+    r"(?<!!)\[(?P<label>[^]\n]{1,500})]\((?P<target>[^()\s\n]{1,1000})\)"
+)
 
 
 def _image_notice(filename: str, alt: str) -> str:
@@ -100,11 +121,53 @@ def transform_navigation_cards(body: str, current_path: PurePosixPath) -> str:
             visible_cell = html.unescape(re.sub(r"<[^>]+>", "", raw_cell)).strip()
             if not visible_cell:
                 continue
-            card = NAV_CARD_LINK_RE.fullmatch(raw_cell)
+            card = NAV_CARD_SPLIT_RE.fullmatch(raw_cell) or NAV_CARD_LINK_RE.fullmatch(raw_cell)
             if card is None:
-                return match.group(0)
-            title = html.escape(card.group("title").strip())
-            description = html.escape(card.group("description").strip())
+                links = list(INLINE_MARKDOWN_LINK_RE.finditer(raw_cell))
+                if "Omitted image" in raw_cell and links:
+                    first_link = links[0]
+                    description_match = re.search(
+                        r"Alt text:\s*(?P<description>.*?)(?:]\([^)]*\))?\s*$",
+                        raw_cell,
+                        re.IGNORECASE | re.DOTALL,
+                    )
+                    if description_match is not None:
+                        target = html.escape(
+                            _navigation_card_url(first_link.group("target"), current_path),
+                            quote=True,
+                        )
+                        cards.append(
+                            f'<a class="nav-card__item" href="{target}">'
+                            f'<strong class="nav-card__title">{html.escape(first_link.group("label").strip())}</strong>'
+                            f'<span class="nav-card__description">{html.escape(description_match.group("description").strip())}</span></a>'
+                        )
+                        continue
+                static_card = NAV_CARD_STATIC_RE.fullmatch(raw_cell)
+                if static_card is None:
+                    return match.group(0)
+                cards.append(
+                    '<div class="nav-card__item">'
+                    f'<strong class="nav-card__title">{html.escape(static_card.group("title").strip())}</strong>'
+                    f'<span class="nav-card__description">{html.escape(static_card.group("description").strip())}</span>'
+                    "</div>"
+                )
+                continue
+            raw_title = card.group("title").strip()
+            embedded_title = INLINE_MARKDOWN_LINK_RE.search(raw_title)
+            if embedded_title is not None:
+                raw_title = embedded_title.group("label").lstrip("[").strip()
+            raw_description = card.group("description").strip()
+            duplicate_prefix = re.compile(
+                rf"^{re.escape(raw_title)}]\([^)]*\)\s*", re.IGNORECASE
+            )
+            raw_description = duplicate_prefix.sub("", raw_description)
+            raw_description = INLINE_MARKDOWN_LINK_RE.sub(
+                lambda link: link.group("label").strip(), raw_description
+            )
+            raw_description = re.sub(r"\[\s*]\([^)]*\)", "", raw_description)
+            raw_description = raw_description.lstrip("[").strip()
+            title = html.escape(raw_title)
+            description = html.escape(raw_description)
             target = html.escape(
                 _navigation_card_url(card.group("target"), current_path), quote=True
             )
@@ -122,6 +185,116 @@ def transform_navigation_cards(body: str, current_path: PurePosixPath) -> str:
         return f'\n<div class="nav-card-grid"{identifier}>\n' + "\n".join(cards) + "\n</div>\n"
 
     return NAV_CARD_TABLE_RE.sub(replace_table, body)
+
+
+def _table_link_url(
+    target: str,
+    current_path: PurePosixPath,
+    resolver: FamilyLinkResolver | None,
+) -> str:
+    parsed = urlparse(html.unescape(target))
+    if parsed.scheme or parsed.netloc or target.startswith(("/", "#")) or not parsed.path.endswith(".md"):
+        return target
+    source_target = PurePosixPath(
+        posixpath.normpath(posixpath.join(current_path.parent.as_posix(), unquote(parsed.path)))
+    )
+    if resolver is not None:
+        source_target = resolver.resolve(source_target, current_path)
+    current_rendered = current_path.parent if current_path.name == "index.md" else current_path.with_suffix("")
+    target_rendered = source_target.parent if source_target.name == "index.md" else source_target.with_suffix("")
+    relative = posixpath.relpath(target_rendered.as_posix(), start=current_rendered.as_posix())
+    rendered = "./" if relative == "." else relative.rstrip("/") + "/"
+    return rendered + (f"?{parsed.query}" if parsed.query else "") + (f"#{parsed.fragment}" if parsed.fragment else "")
+
+
+def transform_table_markdown(
+    body: str,
+    current_path: PurePosixPath,
+    resolver: FamilyLinkResolver | None = None,
+) -> str:
+    """Render inline Markdown found inside ordinary upstream HTML table cells."""
+
+    protected: list[str] = []
+
+    def protect_navigation_card(match: re.Match) -> str:
+        protected.append(match.group(0))
+        return f"\x00SN_NAV_CARD_{len(protected) - 1}\x00"
+
+    body = NAV_CARD_TABLE_RE.sub(protect_navigation_card, body)
+
+    table_depth = 0
+    code_depth = 0
+    fence_open = False
+    parts = re.split(r"(<[^>]+>)", body)
+    for index, part in enumerate(parts):
+        if not part.startswith("<"):
+            if table_depth and not code_depth:
+                def render_link(link_match: re.Match) -> str:
+                    label = re.sub(r"\\([()[\]_*])", r"\1", link_match.group("label"))
+                    target = _table_link_url(link_match.group("target"), current_path, resolver)
+                    return (
+                        f'<a href="{html.escape(target, quote=True)}">'
+                        f"{html.escape(label)}</a>"
+                    )
+
+                text_parts = re.split(r"(```)", part)
+                for text_index, text_part in enumerate(text_parts):
+                    if text_part == "```":
+                        fence_open = not fence_open
+                    elif not fence_open:
+                        text_parts[text_index] = INLINE_MARKDOWN_LINK_RE.sub(
+                            render_link, text_part
+                        )
+                parts[index] = "".join(text_parts)
+            continue
+        tag = re.match(r"</?\s*([a-zA-Z0-9]+)", part)
+        if tag is None:
+            continue
+        name = tag.group(1).casefold()
+        closing = bool(re.match(r"</", part))
+        if name == "table":
+            table_depth += -1 if closing else 1
+        elif name in {"pre", "code"}:
+            code_depth += -1 if closing else 1
+    body = "".join(parts)
+
+    def replace_cell(cell_match: re.Match) -> str:
+        cell_body = cell_match.group("body")
+        if not re.search(r"(?<![\\!])(?:\[[^\n]+]\([^)]+\)|\*\*[^*\n]+\*\*|__[^_\n]+__)", cell_body):
+            return cell_match.group(0)
+
+        def rewrite_target(link_match: re.Match) -> str:
+            label = link_match.group("label")
+            target = _table_link_url(link_match.group("target"), current_path, resolver)
+            return f"[{label}]({target})"
+
+        rewritten = INLINE_MARKDOWN_LINK_RE.sub(rewrite_target, cell_body)
+        rewritten = textwrap.dedent(rewritten).strip()
+        rewritten = re.sub(r"(?m)^(?: {4}|\t)(?=-\s{3})", "", rewritten)
+        rendered = markdown(rewritten, extensions=["pymdownx.superfences"]).strip()
+        if rendered.startswith("<p>") and rendered.endswith("</p>") and rendered.count("<p>") == 1:
+            rendered = rendered[3:-4]
+        return (
+            f'<{cell_match.group("tag")}{cell_match.group("attrs")}>'
+            f"{rendered}</{cell_match.group('tag')}>"
+        )
+
+    body = TABLE_CELL_RE.sub(replace_cell, body)
+    body = re.sub(r"</table\s*>(?!\s*\n\s*\n)", "</table>\n\n", body, flags=re.IGNORECASE)
+    for index, table in enumerate(protected):
+        body = body.replace(f"\x00SN_NAV_CARD_{index}\x00", table)
+    return body
+
+
+def normalize_fenced_code_boundaries(body: str) -> str:
+    """Put standalone fenced-code markers on Markdown block boundaries."""
+    body = re.sub(r"(?m)(?<=\S)[ \t]*(```[^\n]*)$", r"\n\n\1", body)
+    result: list[str] = []
+    for line in body.splitlines(keepends=True):
+        if line.lstrip().startswith("```") and result and result[-1].strip():
+            result.append("\n")
+        result.append(line)
+    return "".join(result)
 
 
 def rewrite_missing_images(
@@ -190,12 +363,16 @@ def transform_document(
     source_files: set[PurePosixPath] | None = None,
 ) -> str:
     metadata, body = split_frontmatter(text)
+    if isinstance(metadata.get("title"), str):
+        metadata["title"] = re.sub(r"\\([()[\]_*])", r"\1", metadata["title"])
     if not body.strip():
         title = metadata.get("title") or relative_path.stem.replace("-", " ").title()
         body = f"# {title}\n\n!!! warning \"Source content unavailable\"\n    The upstream file is currently empty. This placeholder preserves incoming links.\n"
     body = rewrite_links(body, family, relative_path, families, repository, resolver)
     body = transform_navigation_cards(body, relative_path)
     body = rewrite_missing_images(body, relative_path, source_files, resolver)
+    body = transform_table_markdown(body, relative_path, resolver)
+    body = normalize_fenced_code_boundaries(body)
     body = enrich_body(body, metadata, family, source_url)
     return "---\n" + yaml.safe_dump(metadata, sort_keys=False, allow_unicode=True).strip() + "\n---\n\n" + body
 

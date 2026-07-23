@@ -7,7 +7,8 @@ from urllib.parse import urlparse
 
 from .links import FamilyLinkResolver
 
-NAV_RE = re.compile(r"^(\s*)- \[([^]]+)]\(([^)]+)\)")
+NAV_RE = re.compile(r"^(\s*)- \[((?:\\.|[^]])+)]\(([^)]+)\)")
+MARKDOWN_ESCAPE_RE = re.compile(r"\\([()[\]_*])")
 
 
 @dataclass
@@ -20,6 +21,32 @@ class NavNode:
         if self.children:
             return {self.title: [self.path, *[child.mkdocs() for child in self.children]]}
         return {self.title: self.path}
+
+
+def _normalize_title(title: str) -> str:
+    return MARKDOWN_ESCAPE_RE.sub(r"\1", title.strip())
+
+
+def _deduplicate(
+    nodes: list[NavNode],
+    ancestor_paths: frozenset[str] = frozenset(),
+    seen_paths: set[str] | None = None,
+) -> list[NavNode]:
+    if seen_paths is None:
+        seen_paths = set()
+    result: list[NavNode] = []
+    seen: set[tuple[str, str]] = set()
+    for node in nodes:
+        identity = (node.title.casefold(), node.path)
+        if identity in seen or node.path in ancestor_paths or node.path in seen_paths:
+            continue
+        seen.add(identity)
+        seen_paths.add(node.path)
+        node.children = _deduplicate(
+            node.children, ancestor_paths | {node.path}, seen_paths
+        )
+        result.append(node)
+    return result
 
 
 def source_path(url: str) -> str | None:
@@ -50,7 +77,7 @@ def parse_index(
                 raise ValueError("referring_index is required when resolving navigation")
             path = str(resolver.resolve(path, referring_index, kind="navigation"))
         depth = len(indent.expandtabs(2)) // 2
-        node = NavNode(title.strip(), str(PurePosixPath(path)))
+        node = NavNode(_normalize_title(title), str(PurePosixPath(path)))
         while stack and stack[-1][0] >= depth:
             stack.pop()
         if stack:
@@ -58,4 +85,4 @@ def parse_index(
         else:
             roots.append(node)
         stack.append((depth, node))
-    return [node.mkdocs() for node in roots]
+    return [node.mkdocs() for node in _deduplicate(roots)]
