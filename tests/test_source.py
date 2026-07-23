@@ -28,7 +28,7 @@ def run(*arguments: str, cwd: Path) -> str:
 
 
 def settings(root: Path) -> Settings:
-    return Settings(root, "site", "", "", "owner/repo", "llms.txt", (), "site")
+    return Settings(root / "pipeline.toml", "site", "", "", "owner/repo", "llms.txt", (), "site")
 
 
 @pytest.fixture

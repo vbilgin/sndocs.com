@@ -54,10 +54,7 @@ Build a complete site, optionally reusing a previously unpacked artifact:
 
 An existing output is never removed implicitly. Pass `--clean` to replace one after source discovery and validation succeed. `--reuse-from` must identify a separate assembled site.
 
-Automatic build workspaces are created below the ignored `.temp/` directory and removed as each
-family finishes. Supply a fresh `--work-dir` path to preserve source snapshots, transformed
-Markdown, and MkDocs configuration for diagnostics; preserved workspaces can be large and are not
-cleaned automatically.
+Automatic build workspaces are created below the ignored `.temp/` directory in the directory where `sndocs` is invoked, independent of the selected configuration file's location, and removed as each family finishes. Supply a fresh `--work-dir` path to preserve source snapshots, transformed Markdown, and MkDocs configuration for diagnostics; preserved workspaces can be large and are not cleaned automatically.
 
 Use smoke mode for a fast, strict local check of the newest family without search indexing:
 

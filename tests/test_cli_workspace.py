@@ -7,6 +7,7 @@ from sndocs.models import Discovery
 
 
 def write_config(root: Path) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
     config = root / "pipeline.toml"
     config.write_text(
         '[site]\nname = "test"\n[upstream]\nrepository = "owner/repo"\n',
@@ -24,7 +25,10 @@ def manifest() -> dict:
 
 
 def test_automatic_workspace_is_inside_repo_and_removed(tmp_path, monkeypatch):
-    config = write_config(tmp_path)
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    config = write_config(repository / "local" / "test")
+    monkeypatch.chdir(repository)
     monkeypatch.setattr(cli, "discover", lambda *_args: discovery())
     observed = []
 
@@ -37,14 +41,17 @@ def test_automatic_workspace_is_inside_repo_and_removed(tmp_path, monkeypatch):
     cli.main(["--config", str(config), "build", "--output", str(tmp_path / "site")])
 
     work, kwargs = observed[0]
-    assert work.parent == tmp_path / ".temp"
+    assert work.parent == repository / ".temp"
     assert work.name.startswith("sndocs-")
     assert kwargs["cleanup_work"] is True
     assert not work.exists()
 
 
 def test_automatic_workspace_is_removed_after_failure(tmp_path, monkeypatch):
-    config = write_config(tmp_path)
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    config = write_config(repository / "local" / "test")
+    monkeypatch.chdir(repository)
     monkeypatch.setattr(cli, "discover", lambda *_args: discovery())
     observed = []
 

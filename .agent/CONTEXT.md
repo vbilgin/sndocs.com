@@ -14,7 +14,7 @@ Build `sndocs.com`, an independent documentation mirror generated from `ServiceN
 - `navigation.py` converts publication `index.md` hierarchies into MkDocs navigation and resolves their targets through the shared family link resolver.
 - `transform.py` tolerates malformed YAML frontmatter, enriches pages, rewrites links, converts recognized upstream navigation tables into responsive linked cards, renders missing local images as omitted-image notices, and creates placeholders for unavailable content.
 - `links.py` repairs stale same-family document and navigation links using exact paths, unique basenames, same-publication disambiguation, self-canonical metadata, and narrowly scoped reviewed fallback overrides; unresolved ambiguity is fatal.
-- `builder.py` builds families independently with pruned navigation, writes directly to final family outputs, cleans automatic per-family work, hard-links reusable output when possible, retains removed families as archives, and assembles manifests and version metadata.
+- `builder.py` builds families independently, resolves its theme from the package, fingerprints settings and package contents, writes final family outputs, reuses output when possible, retains archives, and assembles manifests.
 - `artifacts.py` validates the assembled site and creates ZIP/TAR archives with SHA-256 checksums.
 - `.github/workflows/build-site.yml` runs scheduled or manual builds and publishes the rolling `site-artifact` GitHub Release when inputs change.
 
@@ -32,7 +32,7 @@ The `sndocs` 0.2 CLI manages reusable sources, discovery, side-effect-free build
 - MkDocs strict mode remains enabled; ambiguity and pipeline-created broken links fail.
 - Production builds include every selected family and search; smoke manifests are distinct, omit search, and cannot be packaged.
 - Existing build output requires explicit `--clean` replacement after discovery succeeds; dry runs never write or delete files.
-- Automatic workspaces below ignored `.temp/` are bounded to one family and cleaned automatically; explicit `--work-dir` content is preserved.
+- Automatic workspaces below the invocation directory's `.temp/` are config-independent and cleaned automatically; explicit `--work-dir` content is preserved.
 - Source prose is preserved with light enrichment rather than editorial restructuring.
 - Upstream media is not restored because ServiceNowDocs intentionally omits it.
 - Generated Markdown and HTML stay out of the main branch.

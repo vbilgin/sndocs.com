@@ -22,15 +22,29 @@ from .transform import transform_tree, write_missing_placeholders
 
 MANIFEST_NAME = "build-manifest.json"
 LINK_REPORT_NAME = "link-report.json"
+PACKAGE_ROOT = Path(__file__).resolve().parent
 
 
-def pipeline_fingerprint(root: Path) -> str:
+def pipeline_fingerprint(settings: Settings, package_root: Path | None = None) -> str:
+    """Hash effective configuration and installed pipeline implementation."""
     digest = hashlib.sha256()
-    paths = [root / "pyproject.toml", root / "pipeline.toml"]
-    paths += sorted((root / "src" / "sndocs").rglob("*"))
-    for path in paths:
-        if path.is_file() and "__pycache__" not in path.parts and path.suffix not in {".pyc", ".pyo"}:
+    effective_settings = {
+        field: value
+        for field, value in settings.__dict__.items()
+        if field != "config_path"
+    }
+    digest.update(b"settings\0")
+    digest.update(json.dumps(effective_settings, sort_keys=True, separators=(",", ":")).encode())
+    root = package_root or PACKAGE_ROOT
+    for path in sorted(root.rglob("*")):
+        if (
+            path.is_file()
+            and "__pycache__" not in path.parts
+            and path.suffix not in {".pyc", ".pyo"}
+        ):
+            digest.update(b"\0file\0")
             digest.update(path.relative_to(root).as_posix().encode())
+            digest.update(b"\0")
             digest.update(path.read_bytes())
     return digest.hexdigest()
 
@@ -53,7 +67,7 @@ def plan_build(
     if build_profile not in {"production", "smoke"}:
         raise ValueError(f"unsupported build profile: {build_profile}")
     previous = read_manifest(previous_site)
-    fingerprint = pipeline_fingerprint(settings.root)
+    fingerprint = pipeline_fingerprint(settings)
     previous_families = previous.get("families", {})
     previous_profile = previous.get("build_profile", "production")
     fingerprint_changed = previous.get("pipeline_fingerprint") != fingerprint
@@ -190,7 +204,7 @@ def write_mkdocs_config(
         "site_dir": str(site_dir or work / "site"),
         "theme": {
             "name": "material",
-            "custom_dir": str(settings.root / "src" / "sndocs" / "theme"),
+            "custom_dir": str(PACKAGE_ROOT / "theme"),
             "features": features,
             "logo": "assets/images/branding/logomark-on-light.svg",
             "favicon": "assets/images/branding/favicon.svg",

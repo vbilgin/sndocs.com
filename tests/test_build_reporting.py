@@ -8,7 +8,7 @@ from sndocs.models import Discovery, Settings
 
 def settings_for(root):
     return Settings(
-        root=root,
+        config_path=root / "pipeline.toml",
         site_name="sndocs.com",
         site_url="https://sndocs.com",
         site_description="Mirror",
@@ -60,7 +60,7 @@ def test_incremental_build_reuses_previous_report(tmp_path, monkeypatch):
     (previous / "australia").mkdir(parents=True)
     (previous / "australia" / "index.html").write_text("ok", encoding="utf-8")
     previous_manifest = {
-        "pipeline_fingerprint": builder.pipeline_fingerprint(tmp_path),
+        "pipeline_fingerprint": builder.pipeline_fingerprint(settings),
         "latest": "australia",
         "families": {"australia": {"source_sha": "abc", "archived": False}},
     }
@@ -142,17 +142,28 @@ def test_archived_family_schema_one_report_is_upgraded(tmp_path, monkeypatch):
     assert manifest["families"]["xanadu"]["archived"] is True
 
 
-def test_pipeline_fingerprint_ignores_python_bytecode(tmp_path):
-    package = tmp_path / "src" / "sndocs"
+def test_pipeline_fingerprint_tracks_effective_settings_and_package_files(tmp_path):
+    package = tmp_path / "sndocs"
     cache = package / "__pycache__"
+    theme = package / "theme"
     cache.mkdir(parents=True)
+    theme.mkdir()
     (package / "module.py").write_text("VALUE = 1\n", encoding="utf-8")
-    (tmp_path / "pyproject.toml").write_text("project = {}\n", encoding="utf-8")
-    (tmp_path / "pipeline.toml").write_text("site = {}\n", encoding="utf-8")
+    (theme / "main.html").write_text("original theme\n", encoding="utf-8")
+    settings = settings_for(tmp_path)
     (cache / "module.pyc").write_bytes(b"first")
-    before = builder.pipeline_fingerprint(tmp_path)
+    before = builder.pipeline_fingerprint(settings, package)
     (cache / "module.pyc").write_bytes(b"different")
-    assert builder.pipeline_fingerprint(tmp_path) == before
+    assert builder.pipeline_fingerprint(settings, package) == before
+    relocated = settings_for(tmp_path / "nested")
+    assert builder.pipeline_fingerprint(relocated, package) == before
+    (theme / "main.html").write_text("changed theme\n", encoding="utf-8")
+    assert builder.pipeline_fingerprint(settings, package) != before
+    (theme / "main.html").write_text("original theme\n", encoding="utf-8")
+    (package / "module.py").write_text("VALUE = 2\n", encoding="utf-8")
+    assert builder.pipeline_fingerprint(settings, package) != before
+    changed_settings = Settings(**{**settings.__dict__, "site_name": "different"})
+    assert builder.pipeline_fingerprint(changed_settings, package) != before
 
 
 def test_smoke_build_selects_latest_disables_search_and_cleans_family_work(tmp_path, monkeypatch):

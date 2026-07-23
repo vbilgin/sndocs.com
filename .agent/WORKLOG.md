@@ -2,6 +2,26 @@
 
 Reverse-chronological record of significant project work. This is a historical index, not the source of truth for implementation details; consult `.agent/CONTEXT.md`, ADRs, the current code, tests, and Git history as appropriate.
 
+## 2026-07-22 — Decouple runtime resources from configuration location
+
+- **Work performed by:** Codex, with direction from Victor Bilgin
+- **Commit:** `Fix config-independent runtime paths` (intended subject)
+
+### Outcome
+
+Allowed custom-named pipeline configuration files to live outside the repository root without redirecting packaged theme lookup, pipeline fingerprinting, or automatic workspace placement into the config directory.
+
+### Changes and decisions
+
+- Recorded the selected config path explicitly, resolved MkDocs overrides from the installed `sndocs` package, and based incremental fingerprints on effective settings plus installed package contents while excluding caches and bytecode.
+- Anchored automatic `.temp/` workspaces to the CLI invocation directory and preserved explicit diagnostic workspaces.
+- Kept the CLI and TOML schemas unchanged; manifests created with the former fingerprint may rebuild once when reused.
+
+### Verification
+
+- The full suite passed with 85 tests and one filesystem-specific skip; focused tests passed with 31 tests.
+- A built wheel contained all 12 theme files, including templates, branding, stylesheets, and JavaScript.
+
 ## 2026-07-22 — Simplify and harden the sndocs CLI
 
 - **Work performed by:** Codex, with direction from Victor Bilgin

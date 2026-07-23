@@ -12,7 +12,7 @@ def load_settings(path: Path) -> Settings:
     upstream = data["upstream"]
     build = data.get("build", {})
     return Settings(
-        root=path.parent.resolve(),
+        config_path=path.resolve(),
         site_name=site.get("name", "sndocs.com"),
         site_url=site.get("url", "").rstrip("/"),
         site_description=site.get("description", ""),

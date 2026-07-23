@@ -30,7 +30,7 @@ class Discovery:
 
 @dataclass(frozen=True)
 class Settings:
-    root: Path
+    config_path: Path
     site_name: str
     site_url: str
     site_description: str
@@ -38,4 +38,3 @@ class Settings:
     llms_path: str
     family_allowlist: tuple[str, ...]
     archive_basename: str
-

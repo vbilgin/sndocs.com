@@ -38,7 +38,7 @@ def test_fixture_builds_with_material_theme(tmp_path, search):
         "</td></tr></tbody></table>\n",
         encoding="utf-8",
     )
-    settings = Settings(root, "sndocs.com", "https://sndocs.com", "Mirror", "ServiceNow/ServiceNowDocs", "llms.txt", (), "sndocs-site")
+    settings = Settings(tmp_path / "nested" / "custom.toml", "sndocs.com", "https://sndocs.com", "Mirror", "ServiceNow/ServiceNowDocs", "llms.txt", (), "sndocs-site")
     discovery = Discovery(["australia"], "australia", [Publication("Publication", "pub", "url")], {"australia": "abc"})
     work = tmp_path / "work"
     docs = work / "docs"
@@ -61,6 +61,7 @@ def test_fixture_builds_with_material_theme(tmp_path, search):
         settings, source, work, "australia", discovery, site_dir=site, search=search, nav=nav
     )
     loaded = yaml.safe_load(config.read_text(encoding="utf-8"))
+    assert Path(loaded["theme"]["custom_dir"]).resolve() == root / "src" / "sndocs" / "theme"
     assert "navigation.prune" in loaded["theme"]["features"]
     assert loaded["theme"]["logo"] == "assets/images/branding/logomark-on-light.svg"
     assert loaded["theme"]["favicon"] == "assets/images/branding/favicon.svg"

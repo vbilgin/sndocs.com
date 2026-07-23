@@ -5,7 +5,7 @@ from sndocs.models import Discovery, Settings
 
 
 def settings(root):
-    return Settings(root, "site", "", "", "owner/repo", "llms.txt", (), "site")
+    return Settings(root / "pipeline.toml", "site", "", "", "owner/repo", "llms.txt", (), "site")
 
 
 def test_plan_reports_reuse_rebuild_and_stable_archive(tmp_path, monkeypatch):

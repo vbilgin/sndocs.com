@@ -263,7 +263,7 @@ def _run(args: argparse.Namespace, argument_parser: argparse.ArgumentParser) -> 
                 build_profile=build_profile,
             )
         else:
-            temporary_root = settings.root / ".temp"
+            temporary_root = Path.cwd() / ".temp"
             temporary_root.mkdir(parents=True, exist_ok=True)
             with tempfile.TemporaryDirectory(prefix="sndocs-", dir=temporary_root) as temporary:
                 print(f"Automatic workspace: {temporary}", file=sys.stderr)
