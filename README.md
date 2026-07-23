@@ -92,6 +92,30 @@ Then open `http://127.0.0.1:8000/`. The generated site uses clean directory URLs
 filesystem protocol does not serve a directory's `index.html` automatically. Use `--bind` or
 `--port` to override the preview server defaults; `--port 0` selects an available port.
 
+### Local UI audit
+
+Install the optional browser-audit dependency and its Chromium runtime once:
+
+```shell
+.venv/bin/python -m pip install -e '.[ui]'
+.venv/bin/playwright install chromium
+```
+
+Audit every generated HTML file structurally, then render high-risk pages and a deterministic
+100-page sample at desktop and mobile sizes:
+
+```shell
+.venv/bin/sndocs audit-ui --site site --output ui-report
+```
+
+The command writes a browsable `index.html`, stable `findings.json`, and screenshots for rendered
+findings. It is intentionally report-only: findings do not produce a failing exit status. Invalid
+input, missing browser setup, and an audit that cannot start remain command errors. Use
+`--sample-size` and `--seed` to tune repeatable browser coverage. Existing report directories are
+preserved unless `--clean` is supplied. A production family can take several minutes to scan even
+though only selected pages are opened in Chromium; generated reports are local artifacts and
+should not be committed.
+
 ## Output contract
 
 The assembled site contains:

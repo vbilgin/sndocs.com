@@ -18,6 +18,7 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=8.3,<9"]
+ui = ["playwright>=1.55,<2"]
 
 [project.scripts]
 sndocs = "sndocs.cli:main"

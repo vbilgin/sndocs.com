@@ -27,3 +27,4 @@ Accepted ADRs are immutable except for corrections and explicit supersession met
 - [ADR-0012: Preserve clean directory URLs and provide local HTTP preview](0012-clean-directory-urls-and-local-preview.md)
 - [ADR-0013: Simplify and harden the public CLI](0013-simplify-and-harden-cli.md)
 - [ADR-0014: Suppress expected omitted-navigation diagnostics](0014-suppress-omitted-navigation-diagnostics.md)
+- [ADR-0015: Audit generated UI with a local hybrid scanner](0015-local-hybrid-ui-audit.md)

@@ -16,9 +16,11 @@ Build `sndocs.com`, an independent documentation mirror generated from `ServiceN
 - `links.py` repairs stale same-family document and navigation links using exact paths, unique basenames, same-publication disambiguation, self-canonical metadata, and narrowly scoped reviewed fallback overrides; unresolved ambiguity is fatal.
 - `builder.py` builds families independently, resolves its theme from the package, fingerprints settings and package contents, writes final family outputs, reuses output when possible, retains archives, and assembles manifests.
 - `artifacts.py` validates the assembled site and creates ZIP/TAR archives with SHA-256 checksums.
+- `ui_audit.py` scans every generated HTML page for structural UI defects and uses optional local Chromium rendering for high-risk representatives plus a deterministic desktop/mobile sample.
 - `.github/workflows/build-site.yml` runs scheduled or manual builds and publishes the rolling `site-artifact` GitHub Release when inputs change.
 
-The `sndocs` 0.2 CLI manages reusable sources, discovery, side-effect-free build planning, production or selected-family smoke builds, validation, packaging, and local HTTP preview. It provides concise human or single-object JSON results and automatic GitHub Actions outputs.
+The `sndocs` 0.2 CLI manages sources, discovery, build planning and execution, validation, packaging, preview, and machine-readable output.
+The optional report-only `audit-ui` command produces local HTML, JSON, and screenshot triage artifacts without affecting builds, validation, packaging, or publication.
 
 ## Important invariants and decisions
 
@@ -60,24 +62,25 @@ Packaging produces `sndocs-site.tar.gz`, `sndocs-site.zip`, and SHA-256 files fo
 - Incremental and archived builds retain link-resolution reports.
 - Production navigation prunes inactive branches, family sites no longer have a duplicate temporary copy, and local source archives stream during extraction.
 - The test suite currently reports 85 passing tests and one filesystem-specific skip on case-insensitive macOS.
-- Australia SHA `71f4936` now passes a zero-warning render-free audit and a strict production build with 488 repaired navigation references, 67 missing navigation occurrences represented by placeholders, and 6 omitted-image occurrences across 3 targets.
+- Australia SHA `71f4936` passes a zero-warning render-free audit and strict production build.
 - Production and smoke builds minify HTML while leaving inline JavaScript and CSS untouched; Australia output shrank by 46.4% in validation.
 - Every family now receives a generated Material landing page at its manifest route, and artifact validation rejects missing family roots or unrewritten current-family raw Markdown links.
 - Recognized upstream `nav-card` tables render as accessible adaptive card grids with clean directory links and descriptions recovered from omitted-icon alt text.
+- A local hybrid UI audit can scan complete built sites and render deduplicated high-risk pages plus deterministic desktop/mobile samples.
 
 ## Known gaps and risks
 
 - GitHub Actions publication to the rolling Release has not yet been proven in production.
-- Full families remain large (Australia alone contains roughly 49,000 Markdown files and generates 4.03 GiB), making complete artifacts and browser-side search expensive despite bounded temporary storage.
+- Full families remain large; Australia has roughly 49,000 pages and generates 4.03 GiB.
 - Navigation usability and Material search performance still need browser evaluation against a successful complete site.
 - Australia contains 20 stale-anchor diagnostics at MkDocs' informational level; anchor validation intentionally remains informational.
 - Cross-family links can still become stale when equivalent topics move between directories in different release branches.
 
 ## Next likely work
 
-1. Inspect Australia's navigation, placeholder pages, release selector, and search behavior in a browser.
-2. Attempt the complete multi-family build and measure final artifact and browser search performance.
-3. Exercise the GitHub Actions workflow and verify rolling Release reuse and publication.
+1. Diagnose UI-audit findings and correct deterministic transformation or navigation defects.
+2. Attempt the complete multi-family build and measure artifact and search performance.
+3. Verify rolling Release reuse and publication.
 
 ## Development and verification
 

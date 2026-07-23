@@ -4,6 +4,26 @@ Reverse-chronological record of significant project work. This is a historical i
 
 Older entries are archived in [.agent/worklog/2026-H2.md](worklog/2026-H2.md).
 
+## 2026-07-22 — Add a local hybrid UI audit
+
+- **Work performed by:** Codex, with direction from Victor Bilgin
+- **Commit:** `Pending`
+
+### Outcome
+
+Added a report-only local audit that scans every generated HTML page and renders deduplicated high-risk representatives plus a deterministic Chromium sample at desktop and mobile viewports.
+
+### Changes and decisions
+
+- Added `sndocs audit-ui` with safe report replacement, stable JSON, a browsable HTML summary, and screenshots for rendered findings.
+- Detects leaked Markdown and escapes, duplicated navigation, unresolved local and Markdown links, overflow, browser errors, console errors, and failed resources without changing or gating generated sites.
+- Kept Playwright optional, retained local-only operation, and recorded the command and report policy in ADR-0015.
+
+### Verification
+
+- The full suite passed with 88 tests and one filesystem-specific skip.
+- The retained 2.3 GiB Australia production site audit scanned 49,090 pages, rendered 31 representatives at both viewports, and produced 134 grouped findings with 51 screenshots, including all three reported defect classes.
+
 ## 2026-07-22 — Suppress expected omitted-navigation diagnostics
 
 - **Work performed by:** Codex, with direction from Victor Bilgin

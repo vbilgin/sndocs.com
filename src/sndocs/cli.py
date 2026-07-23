@@ -17,6 +17,7 @@ from .builder import MANIFEST_NAME, build_site, plan_build
 from .config import load_settings
 from .discovery import discover
 from .source import LocalSource, RemoteSource, clone_local_source, update_local_source
+from .ui_audit import audit_site_ui
 
 
 class _Formatter(argparse.RawDescriptionHelpFormatter):
@@ -138,6 +139,20 @@ def parser() -> argparse.ArgumentParser:
     )
     _common_options(validate)
     validate.add_argument("--site", type=Path, default=Path("site"), help="site to validate (default: site)")
+
+    audit_ui = commands.add_parser(
+        "audit-ui",
+        help="find structural and rendered UI defects in a built site",
+        description="Scan every HTML page and render high-risk pages plus a deterministic sample.",
+        epilog="Example:\n  sndocs audit-ui --site site --output ui-report",
+        formatter_class=_Formatter,
+    )
+    _common_options(audit_ui)
+    audit_ui.add_argument("--site", type=Path, required=True, help="assembled production or smoke site")
+    audit_ui.add_argument("--output", type=Path, required=True, help="HTML, JSON, and screenshot report directory")
+    audit_ui.add_argument("--clean", action="store_true", help="remove an existing report directory")
+    audit_ui.add_argument("--sample-size", type=int, default=100, help="additional pages to render (default: 100)")
+    audit_ui.add_argument("--seed", type=int, default=0, help="deterministic sampling seed (default: 0)")
 
     serve = commands.add_parser(
         "serve",
@@ -305,6 +320,32 @@ def _run(args: argparse.Namespace, argument_parser: argparse.ArgumentParser) -> 
         site = args.site.resolve()
         validate_site(site)
         _emit(args, {"site": str(site), "valid": True}, f"Site validation passed: {site}")
+        return 0
+
+    if args.command == "audit-ui":
+        site = args.site.resolve()
+        output = args.output.resolve()
+        if site == output:
+            argument_parser.error("--output must be different from --site")
+        if output.exists() and not args.clean:
+            argument_parser.error(f"output already exists: {output}; pass --clean to replace it")
+        if output.exists():
+            shutil.rmtree(output)
+        report = audit_site_ui(
+            site, output, sample_size=args.sample_size, seed=args.seed
+        )
+        result = {
+            "site": str(site),
+            "output": str(output),
+            "findings": len(report["findings"]),
+            "errors": len(report["errors"]),
+            "coverage": report["coverage"],
+        }
+        _emit(
+            args,
+            result,
+            f"UI audit found {result['findings']} findings; report: {output / 'index.html'}",
+        )
         return 0
 
     if args.command == "serve":
