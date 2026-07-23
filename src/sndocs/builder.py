@@ -223,6 +223,7 @@ def write_mkdocs_config(
             f"© {build_year} ServiceNow, Inc. All rights reserved. "
             "ServiceNow content redistributed under Apache-2.0."
         ),
+        "validation": {"nav": {"omitted_files": "ignore"}},
         "strict": True,
     }
     path = work / "mkdocs.yml"

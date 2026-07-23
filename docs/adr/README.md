@@ -26,3 +26,4 @@ Accepted ADRs are immutable except for corrections and explicit supersession met
 - [ADR-0011: Normalize deterministic upstream validation defects before strict builds](0011-normalize-upstream-validation-defects.md)
 - [ADR-0012: Preserve clean directory URLs and provide local HTTP preview](0012-clean-directory-urls-and-local-preview.md)
 - [ADR-0013: Simplify and harden the public CLI](0013-simplify-and-harden-cli.md)
+- [ADR-0014: Suppress expected omitted-navigation diagnostics](0014-suppress-omitted-navigation-diagnostics.md)

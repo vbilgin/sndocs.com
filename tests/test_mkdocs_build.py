@@ -67,12 +67,20 @@ def test_fixture_builds_with_material_theme(tmp_path, search):
     assert loaded["theme"]["favicon"] == "assets/images/branding/favicon.svg"
     assert loaded["theme"]["palette"] == [{"scheme": "default"}]
     assert loaded["use_directory_urls"] is True
+    assert loaded["validation"] == {"nav": {"omitted_files": "ignore"}}
+    assert loaded["strict"] is True
     assert loaded["extra"]["servicenow_copyright_year"] == datetime.now(timezone.utc).year
     plugin_names = [plugin if isinstance(plugin, str) else next(iter(plugin)) for plugin in loaded["plugins"]]
     assert ("search" in plugin_names) is search
     assert plugin_names[-1] == "minify_html"
     assert loaded["plugins"][-1] == {"minify_html": {"minify_css": False, "minify_js": False}}
-    subprocess.run([sys.executable, "-m", "mkdocs", "build", "--clean", "--config-file", str(config)], check=True)
+    completed = subprocess.run(
+        [sys.executable, "-m", "mkdocs", "build", "--clean", "--config-file", str(config)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert "not included in the \"nav\" configuration" not in completed.stderr
     rendered = (site / "pub" / "new" / "page" / "index.html").read_text(encoding="utf-8")
     assert "Page" in rendered and "View source" in rendered
     assert "\n\n" not in rendered
@@ -138,3 +146,17 @@ def test_fixture_builds_with_material_theme(tmp_path, search):
     }
     assert report["counts"]["placeholders"] == 1
     assert report["counts"]["omitted_images"] == {"occurrences": 1, "targets": 1}
+    if not search:
+        transformed_page = docs / "pub" / "new" / "page.md"
+        transformed_page.write_text(
+            transformed_page.read_text(encoding="utf-8") + "\n[Broken](missing-target.md)\n",
+            encoding="utf-8",
+        )
+        failed = subprocess.run(
+            [sys.executable, "-m", "mkdocs", "build", "--clean", "--config-file", str(config)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert failed.returncode != 0
+        assert "missing-target.md" in failed.stderr

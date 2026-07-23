@@ -25,7 +25,7 @@ The `sndocs` 0.2 CLI manages reusable sources, discovery, side-effect-free build
 - Upstream `llms.txt` is authoritative for current families and publication ordering.
 - Every current family is published under `/<family>/`; the root redirects to the newest.
 - Deleted upstream families remain available as immutable archived snapshots.
-- Publication indexes define navigation, but all Markdown files are rendered so inbound links remain valid.
+- Publication indexes define navigation, but all Markdown files are rendered so inbound links remain valid; expected omitted-navigation listings are suppressed without weakening strict validation.
 - Same-family moved links are repaired when the destination is deterministic through path or self-canonical metadata, or selected by a family/source/target-specific reviewed fallback override.
 - Missing upstream targets receive clearly marked diagnostic placeholder pages.
 - Cross-family moved-link resolution is intentionally not attempted.
