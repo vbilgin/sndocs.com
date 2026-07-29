@@ -31,3 +31,4 @@ Accepted ADRs are immutable except for corrections and explicit supersession met
 - [ADR-0016: Define site quality with packaged Markdown rules](0016-versioned-site-quality-ruleset.md)
 - [ADR-0017: Remediate UI findings at their source layer](0017-remediate-ui-findings-at-source.md)
 - [ADR-0018: Normalize malformed upstream presentation structures](0018-normalize-malformed-upstream-presentation.md)
+- [ADR-0019: Use chunked Pagefind search for current families](0019-pagefind-static-search.md)

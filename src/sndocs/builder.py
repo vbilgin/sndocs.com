@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.metadata
 import json
 import os
 import shutil
@@ -25,7 +26,11 @@ LINK_REPORT_NAME = "link-report.json"
 PACKAGE_ROOT = Path(__file__).resolve().parent
 
 
-def pipeline_fingerprint(settings: Settings, package_root: Path | None = None) -> str:
+def pipeline_fingerprint(
+    settings: Settings,
+    package_root: Path | None = None,
+    search_backend_version: str | None = None,
+) -> str:
     """Hash effective configuration and installed pipeline implementation."""
     digest = hashlib.sha256()
     effective_settings = {
@@ -35,6 +40,9 @@ def pipeline_fingerprint(settings: Settings, package_root: Path | None = None) -
     }
     digest.update(b"settings\0")
     digest.update(json.dumps(effective_settings, sort_keys=True, separators=(",", ":")).encode())
+    version = search_backend_version or importlib.metadata.version("pagefind")
+    digest.update(b"\0search-backend\0pagefind\0")
+    digest.update(version.encode())
     root = package_root or PACKAGE_ROOT
     for path in sorted(root.rglob("*")):
         if (
@@ -183,6 +191,7 @@ def write_mkdocs_config(
     discovery: Discovery,
     site_dir: Path | None = None,
     search: bool = True,
+    search_cache_tag: str | None = None,
     nav: list[dict] | None = None,
 ) -> Path:
     build_year = datetime.now(timezone.utc).year
@@ -193,8 +202,6 @@ def write_mkdocs_config(
         "navigation.footer",
         "content.code.copy",
     ]
-    if search:
-        features.append("search.suggest")
     config = {
         "site_name": f"{settings.site_name} — {family.title()}",
         "site_description": settings.site_description,
@@ -210,14 +217,15 @@ def write_mkdocs_config(
             "favicon": "assets/images/branding/favicon.svg",
             "palette": [{"scheme": "default"}],
         },
-        "plugins": [
-            *([{"search": {"lang": "en"}}] if search else []),
-            {"minify_html": {"minify_css": False, "minify_js": False}},
-        ],
+        "plugins": [{"minify_html": {"minify_css": False, "minify_js": False}}],
         "markdown_extensions": ["admonition", "attr_list", "tables", "toc", "pymdownx.details", "pymdownx.superfences"],
         "extra_css": ["assets/stylesheets/extra.css"],
         "extra_javascript": ["assets/javascripts/versions.js"],
-        "extra": {"servicenow_copyright_year": build_year},
+        "extra": {
+            "servicenow_copyright_year": build_year,
+            "pagefind_search": search,
+            "pagefind_cache_tag": search_cache_tag or "",
+        },
         "nav": nav if nav is not None else publication_nav(source, discovery),
         "copyright": (
             f"© {build_year} ServiceNow, Inc. All rights reserved. "
@@ -229,6 +237,42 @@ def write_mkdocs_config(
     path = work / "mkdocs.yml"
     path.write_text(yaml.safe_dump(config, sort_keys=False, allow_unicode=True), encoding="utf-8")
     return path
+
+
+def build_search_index(site: Path) -> None:
+    """Build a family-scoped, chunked Pagefind index."""
+    try:
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pagefind",
+                "--site",
+                str(site),
+                "--output-subdir",
+                "pagefind",
+                "--root-selector",
+                ".md-content__inner",
+                "--force-language",
+                "en",
+            ],
+            check=True,
+            stdout=sys.stderr,
+            stderr=sys.stderr,
+        )
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError("Pagefind search indexing failed") from error
+    required = [
+        site / "pagefind" / "pagefind.js",
+        site / "pagefind" / "pagefind-entry.json",
+        site / "pagefind" / "pagefind-component-ui.js",
+        site / "pagefind" / "pagefind-component-ui.css",
+    ]
+    missing = [path.relative_to(site).as_posix() for path in required if not path.is_file()]
+    if not any((site / "pagefind" / "index").glob("*.pf_index")):
+        missing.append("pagefind/index/*.pf_index")
+    if missing:
+        raise RuntimeError(f"Pagefind did not create required search files: {', '.join(missing)}")
 
 
 def build_family(
@@ -260,6 +304,9 @@ def build_family(
     link_report = resolver.report()
     _phase(family, "Markdown ready", started, docs)
     family_output = output / family
+    cache_tag = hashlib.sha256(
+        f"{pipeline_fingerprint(settings)}\0{discovery.shas[family]}".encode()
+    ).hexdigest()[:16]
     config = write_mkdocs_config(
         settings,
         source,
@@ -268,6 +315,7 @@ def build_family(
         discovery,
         site_dir=family_output,
         search=search,
+        search_cache_tag=cache_tag,
         nav=nav,
     )
     started = time.monotonic()
@@ -282,6 +330,11 @@ def build_family(
         stderr=sys.stderr,
     )
     _phase(family, "site ready", started, family_output)
+    if search:
+        started = time.monotonic()
+        print(f"Build [{family}] indexing search with Pagefind", file=sys.stderr)
+        build_search_index(family_output)
+        _phase(family, "search ready", started, family_output / "pagefind")
     return link_report
 
 

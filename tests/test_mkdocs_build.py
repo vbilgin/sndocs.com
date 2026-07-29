@@ -7,10 +7,29 @@ from pathlib import Path
 import pytest
 import yaml
 
-from sndocs.builder import publication_nav, write_family_landing, write_mkdocs_config
+from sndocs import builder
+from sndocs.builder import (
+    build_search_index,
+    publication_nav,
+    write_family_landing,
+    write_mkdocs_config,
+)
 from sndocs.links import FamilyLinkResolver
 from sndocs.models import Discovery, Publication, Settings
 from sndocs.transform import transform_tree, write_missing_placeholders
+
+
+def test_pagefind_failure_is_reported(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        builder.subprocess,
+        "run",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            subprocess.CalledProcessError(1, ["pagefind"])
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="Pagefind search indexing failed"):
+        build_search_index(tmp_path)
 
 
 @pytest.mark.parametrize("search", [True, False], ids=["production", "smoke"])
@@ -58,7 +77,15 @@ def test_fixture_builds_with_material_theme(tmp_path, search):
     report = resolver.report()
     site = tmp_path / "site"
     config = write_mkdocs_config(
-        settings, source, work, "australia", discovery, site_dir=site, search=search, nav=nav
+        settings,
+        source,
+        work,
+        "australia",
+        discovery,
+        site_dir=site,
+        search=search,
+        search_cache_tag="fixture-cache-tag",
+        nav=nav,
     )
     loaded = yaml.safe_load(config.read_text(encoding="utf-8"))
     assert Path(loaded["theme"]["custom_dir"]).resolve() == root / "src" / "sndocs" / "theme"
@@ -70,16 +97,19 @@ def test_fixture_builds_with_material_theme(tmp_path, search):
     assert loaded["validation"] == {"nav": {"omitted_files": "ignore"}}
     assert loaded["strict"] is True
     assert loaded["extra"]["servicenow_copyright_year"] == datetime.now(timezone.utc).year
+    assert loaded["extra"]["pagefind_search"] is search
+    assert loaded["extra"]["pagefind_cache_tag"] == "fixture-cache-tag"
     plugin_names = [plugin if isinstance(plugin, str) else next(iter(plugin)) for plugin in loaded["plugins"]]
-    assert ("search" in plugin_names) is search
-    assert plugin_names[-1] == "minify_html"
-    assert loaded["plugins"][-1] == {"minify_html": {"minify_css": False, "minify_js": False}}
+    assert plugin_names == ["minify_html"]
+    assert loaded["plugins"] == [{"minify_html": {"minify_css": False, "minify_js": False}}]
     completed = subprocess.run(
         [sys.executable, "-m", "mkdocs", "build", "--clean", "--config-file", str(config)],
         check=True,
         capture_output=True,
         text=True,
     )
+    if search:
+        build_search_index(site)
     assert "not included in the \"nav\" configuration" not in completed.stderr
     rendered = (site / "pub" / "new" / "page" / "index.html").read_text(encoding="utf-8")
     assert "Page" in rendered and "View source" in rendered
@@ -115,10 +145,19 @@ def test_fixture_builds_with_material_theme(tmp_path, search):
     assert 'href=https://github.com/ServiceNow/ServiceNowDocs' in rendered
     assert ">ServiceNowDocs repository</a>" in rendered
     assert "assets/javascripts/versions.js" in rendered
+    assert ("pagefind-modal-trigger" in rendered) is search
+    assert ("pagefind-modal" in rendered) is search
+    assert ("fixture-cache-tag" in rendered) is search
+    assert ("pagefind/pagefind-component-ui.js" in rendered) is search
     assert "Image omitted" in rendered and "Diagram & details" in rendered
     placeholder = (site / "pub" / "nav-only" / "index.html").read_text(encoding="utf-8")
     assert "Upstream document unavailable" in placeholder
-    assert (site / "search" / "search_index.json").exists() is search
+    assert not (site / "search" / "search_index.json").exists()
+    assert (site / "pagefind" / "pagefind.js").exists() is search
+    assert (site / "pagefind" / "pagefind-entry.json").exists() is search
+    assert (site / "pagefind" / "pagefind-component-ui.js").exists() is search
+    assert (site / "pagefind" / "pagefind-component-ui.css").exists() is search
+    assert bool(list((site / "pagefind" / "index").glob("*.pf_index"))) is search
     branding = site / "assets" / "images" / "branding"
     expected_assets = {
         "apple-touch-icon.png",

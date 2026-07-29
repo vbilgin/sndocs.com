@@ -28,6 +28,18 @@
   --md-footer-fg-color--lighter: rgb(250 247 242 / 50%);
   --md-footer-bg-color: #262626;
   --md-footer-bg-color--dark: #262626;
+  --pf-text: #262626;
+  --pf-text-secondary: rgb(38 38 38 / 70%);
+  --pf-text-muted: rgb(38 38 38 / 55%);
+  --pf-background: #faf7f2;
+  --pf-border: rgb(38 38 38 / 18%);
+  --pf-border-focus: #6a4cff;
+  --pf-hover: rgb(106 76 255 / 8%);
+  --pf-mark: #ff8c42;
+  --pf-outline-focus: #6a4cff;
+  --pf-error-bg: rgb(215 38 61 / 10%);
+  --pf-error-border: #d7263d;
+  --pf-error-text: #d7263d;
 }
 
 .md-header {
@@ -43,6 +55,18 @@
 
 .md-header__button.md-logo:is(:focus, :hover) {
   opacity: .8;
+}
+
+.md-header pagefind-modal-trigger {
+  display: block;
+  min-width: 8rem;
+  margin-left: .4rem;
+}
+
+@media screen and (max-width: 44.984375em) {
+  .md-header pagefind-modal-trigger {
+    min-width: 2.4rem;
+  }
 }
 
 .md-typeset a:is(:focus, :hover),

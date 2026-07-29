@@ -15,7 +15,7 @@ Build an independent versioned MkDocs mirror of `ServiceNow/ServiceNowDocs`.
 - `transform.py` tolerates malformed YAML frontmatter, enriches pages, rewrites links, converts recognized upstream navigation tables into responsive linked cards, renders missing local images as omitted-image notices, and creates placeholders for unavailable content.
 - Raw HTML tables receive deterministic recovery for embedded Markdown, nesting, malformed fences, and recognized card variants; unfamiliar structures remain unchanged.
 - `links.py` repairs stale same-family document and navigation links using exact paths, unique basenames, same-publication disambiguation, self-canonical metadata, and narrowly scoped reviewed fallback overrides; unresolved ambiguity is fatal.
-- `builder.py` builds families independently, fingerprints settings and package contents, reuses output, retains archives, and assembles manifests.
+- `builder.py` builds families independently, fingerprints settings, package contents, and the Pagefind version, creates family-scoped chunked search indexes, reuses output, retains archives, and assembles manifests.
 - `artifacts.py` validates the assembled site and creates ZIP/TAR archives with SHA-256 checksums.
 - `quality.py` validates packaged Markdown quality rules and detector registration; `ui_audit.py` applies them through full-tree structural scanning and sampled Chromium rendering.
 - `.github/workflows/build-site.yml` runs scheduled or manual builds and publishes the rolling `site-artifact` GitHub Release when inputs change.
@@ -33,7 +33,7 @@ The `sndocs` 0.2 CLI manages the pipeline; optional `audit-ui` and `quality` com
 - Missing upstream targets receive clearly marked diagnostic placeholder pages.
 - Cross-family moved-link resolution is intentionally not attempted.
 - MkDocs strict mode remains enabled; ambiguity and pipeline-created broken links fail.
-- Production builds include every selected family and search; smoke manifests are distinct, omit search, and cannot be packaged.
+- Production builds include a static Pagefind full-text index in every selected current family; smoke manifests are distinct, omit search, and cannot be packaged.
 - Existing output requires explicit `--clean` replacement; dry runs never write or delete files.
 - Automatic workspaces below the invocation directory's `.temp/` are config-independent and cleaned automatically; explicit `--work-dir` content is preserved.
 - Source prose is preserved with light enrichment rather than editorial restructuring.
@@ -47,6 +47,7 @@ The `sndocs` 0.2 CLI manages the pipeline; optional `audit-ui` and `quality` com
 The assembled site contains:
 
 - one directory for each current or archived family;
+- a `pagefind/` search bundle inside each current production family;
 - `index.html` redirecting to the newest family;
 - `versions.json` for the release selector;
 - `build-manifest.json` with source SHAs, archive state, build profile, pipeline fingerprint, and link counts;
@@ -58,7 +59,7 @@ Packaging produces `sndocs-site.tar.gz`, `sndocs-site.zip`, and SHA-256 files fo
 ## Current status
 
 - Production navigation prunes inactive branches, family sites no longer have a duplicate temporary copy, and local source archives stream during extraction.
-- The test suite reports 123 passing tests and one filesystem-specific skip on case-insensitive macOS.
+- Current production families use Pagefind's compressed, query-loaded chunks instead of Material's monolithic browser-built Lunr index; the targeted Australia build indexed 49,089 pages into a 124.9 MiB bundle in 53.0 seconds, replacing the 222.0 MiB legacy JSON file.
 - Australia SHA `0dfa6b2` passed the final strict diagnostic render in 243.74 seconds with only 20 known informational stale-anchor messages.
 - Production and smoke builds minify HTML while leaving inline JavaScript and CSS untouched; Australia output shrank by 46.4% in validation.
 - Every family receives a Material landing page, and artifact validation rejects missing family roots or unrewritten current-family raw Markdown links.
@@ -71,16 +72,15 @@ Packaging produces `sndocs-site.tar.gz`, `sndocs-site.zip`, and SHA-256 files fo
 
 - GitHub Actions publication to the rolling Release has not yet been proven in production.
 - Full families remain large; Australia has roughly 49,000 pages and generates 4.03 GiB.
-- Navigation usability and Material search performance still need browser evaluation against a successful complete site.
+- Navigation usability still needs browser evaluation against a successful complete site.
 - Australia contains 20 stale-anchor diagnostics at MkDocs' informational level; anchor validation intentionally remains informational.
 - Cross-family links can still become stale when equivalent topics move between directories in different release branches.
-- The remediation changes have not received a complete current-family production build; retained Australia output is a family-only smoke diagnostic and is not packageable.
-- The final Australia report still identifies visible Markdown, escapes, duplicate navigation, overflow, unresolved local links, and one page error for manual review or separately scoped remediation.
+- Pagefind has passed a targeted Australia production-family build and browser check, but a complete all-current-family production build and package assembly remain deferred.
 
 ## Next likely work
 
 1. Review the retained Australia diagnostic site and UI report; scope any follow-up findings independently rather than treating zero findings as an implicit gate.
-2. Rebuild every current family through the normal production fingerprint flow and measure artifact and search performance.
+2. Rebuild every current family through the normal production fingerprint flow and measure Pagefind artifact and query performance.
 3. Verify rolling Release reuse and publication.
 
 Use the README virtual-environment workflow and `upstream.families` for local restrictions. Repository state remains authoritative.

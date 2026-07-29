@@ -4,6 +4,29 @@ Reverse-chronological record of significant project work. This is a historical i
 
 Older entries are archived in [.agent/worklog/2026-H2.md](worklog/2026-H2.md).
 
+## 2026-07-28 — Replace monolithic Material search with Pagefind
+
+- **Work performed by:** Codex, with direction from Victor Bilgin
+- **Commit:** `Replace monolithic search with Pagefind` (intended subject)
+
+### Outcome
+
+Replaced the unusable 222 MiB Australia Material/Lunr search index with family-scoped Pagefind bundles that retain full-text search while loading compressed query-relevant chunks.
+
+### Changes and decisions
+
+- Added the pinned standard Pagefind binary, a fail-fast post-render indexing phase limited to article content, dependency-aware fingerprints, and current-production artifact validation while preserving smoke and archived-family behavior.
+- Replaced Material's search UI with Pagefind's accessible modal, family-relative runtime URL resolution, and the established sndocs.com palette.
+- Added fixture, failure, validation, and live Chromium coverage for body-text queries, nested pages, click and keyboard opening, no-result and Escape behavior, clean result navigation, resource loading, and console errors.
+- Recorded the static search architecture in ADR-0019, superseding only the search portion of ADR-0003.
+
+### Verification
+
+- The full suite passed with 135 tests and one environment-specific skip; `git diff --check` passed.
+- The strict targeted Australia production build indexed 49,089 pages and 426,812 words into 876 query-loaded chunks in 53.0 seconds. The 124.9 MiB logical Pagefind bundle replaced the 222.0 MiB monolithic Material index, and artifact validation passed.
+- Live browser checks returned the expected clean family URL for title, body-only, and uncommon-term queries within the 10-second timeout, excluded quoted footer text, loaded Pagefind assets successfully, and produced no browser warnings.
+- A complete all-current-family production build and package assembly remain deferred.
+
 ## 2026-07-22 — Normalize malformed upstream presentation
 
 - **Work performed by:** Codex, with direction from Victor Bilgin
@@ -368,26 +391,3 @@ Reworked family build staging so temporary storage no longer accumulates source,
 ### Follow-up
 
 - Resolve or deterministically represent the Australia strict warnings before treating the 4.1 GiB generated tree as a valid artifact or attempting the complete multi-family build.
-
-## 2026-07-17 — Resolve stale links using canonical metadata
-
-- **Work performed by:** Codex, with direction from Victor Bilgin
-- **Committed by:** Victor Bilgin
-- **Commit:** `33abe28` — `Resolve stale links using canonical metadata`
-
-### Outcome
-
-Added automatic, metadata-based resolution for ambiguous stale links whose candidates contain one uniquely self-canonical page, while retaining reviewed overrides for genuine metadata ties.
-
-### Changes and decisions
-
-- Centralized frontmatter parsing and indexed exact ServiceNow canonical-path identities in the family link resolver.
-- Applied self-canonical resolution after path-based rules and before explicit overrides, making the behavior independent of family, referring page, or predefined target.
-- Removed the pending Source-to-Pay glossary override, retained the tied formatter override, and recorded the policy in ADR-0009.
-- Added regression coverage for unseen referring pages, another upstream duplicate pattern, malformed frontmatter, escaped paths, invalid metadata, tied canonical candidates, and override fallback.
-
-### Verification
-
-- Full test suite: 42 passed, 1 filesystem-specific skip.
-- Australia-wide transformation completed with 219,983 exact links, 15,225 repaired links, 121 placeholders, and zero ambiguities.
-- `git diff --check` passed.

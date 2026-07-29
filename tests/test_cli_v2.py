@@ -136,6 +136,16 @@ def test_validate_json_result(tmp_path, capsys):
     family = site / "australia"
     family.mkdir(parents=True)
     (family / "index.html").write_text("ok", encoding="utf-8")
+    pagefind = family / "pagefind"
+    (pagefind / "index").mkdir(parents=True)
+    for name in (
+        "pagefind.js",
+        "pagefind-entry.json",
+        "pagefind-component-ui.js",
+        "pagefind-component-ui.css",
+    ):
+        (pagefind / name).write_text("ok", encoding="utf-8")
+    (pagefind / "index" / "en_fixture.pf_index").write_text("ok", encoding="utf-8")
     (site / "build-manifest.json").write_text(json.dumps({"latest": "australia", "families": {"australia": {}}}), encoding="utf-8")
     (site / "versions.json").write_text(json.dumps({"latest": "australia"}), encoding="utf-8")
     (site / "link-report.json").write_text(json.dumps({

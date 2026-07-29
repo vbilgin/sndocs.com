@@ -16,7 +16,8 @@ def validate_site(site: Path) -> None:
         raise ValueError("link-report.json must use schema version 2")
     if versions["latest"] != manifest["latest"]:
         raise ValueError("manifest and versions.json disagree about the latest family")
-    for family in manifest["families"]:
+    profile = manifest.get("build_profile", "production")
+    for family, record in manifest["families"].items():
         if not (site / family / "index.html").exists():
             raise ValueError(f"family {family} has no generated index.html")
         reported = link_report.get("families", {}).get(family)
@@ -28,6 +29,25 @@ def validate_site(site: Path) -> None:
         counts = reported.get("counts", {})
         if not {"document_links", "navigation_links", "placeholders", "omitted_images"} <= counts.keys():
             raise ValueError(f"family {family} has an incomplete schema-v2 link report")
+        if not record.get("archived", False):
+            pagefind_dir = site / family / "pagefind"
+            pagefind_required = [
+                pagefind_dir / "pagefind.js",
+                pagefind_dir / "pagefind-entry.json",
+                pagefind_dir / "pagefind-component-ui.js",
+                pagefind_dir / "pagefind-component-ui.css",
+            ]
+            legacy_search = site / family / "search" / "search_index.json"
+            if profile == "production":
+                if (
+                    not all(path.is_file() for path in pagefind_required)
+                    or not any((pagefind_dir / "index").glob("*.pf_index"))
+                ):
+                    raise ValueError(f"current family {family} has no Pagefind search bundle")
+                if legacy_search.exists():
+                    raise ValueError(f"current family {family} retains a legacy Material search index")
+            elif pagefind_dir.exists() or legacy_search.exists():
+                raise ValueError(f"smoke family {family} unexpectedly contains search output")
     current_families = set(manifest["families"])
     raw_link = re.compile(r"raw\.githubusercontent\.com/ServiceNow/ServiceNowDocs/([^/]+)/markdown/")
     for html_file in site.rglob("*.html"):

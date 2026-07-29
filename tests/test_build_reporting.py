@@ -164,6 +164,10 @@ def test_pipeline_fingerprint_tracks_effective_settings_and_package_files(tmp_pa
     assert builder.pipeline_fingerprint(settings, package) != before
     changed_settings = Settings(**{**settings.__dict__, "site_name": "different"})
     assert builder.pipeline_fingerprint(changed_settings, package) != before
+    assert (
+        builder.pipeline_fingerprint(settings, package, search_backend_version="different")
+        != before
+    )
 
 
 def test_smoke_build_selects_latest_disables_search_and_cleans_family_work(tmp_path, monkeypatch):

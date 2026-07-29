@@ -4,6 +4,7 @@
 - **Date:** 2026-07-16
 - **Decision owner:** Victor Bilgin
 - **Related commits:** `dbc74ff`, `3a728fd`
+- **Superseded in part by:** [ADR-0019](0019-pagefind-static-search.md) for the search backend only
 
 ## Context
 

@@ -64,9 +64,11 @@ Use smoke mode for a fast, strict local check of the newest family without searc
 ```
 
 Smoke manifests are marked with `build_profile: smoke` and cannot be packaged as production
-artifacts. Production remains the default: it renders and indexes all Markdown in every current
-release family. Material navigation prunes inactive branches from each page so the full navigation
-hierarchy does not multiply the generated HTML size. Repeat `--family NAME` to override
+artifacts. Production remains the default: it renders all Markdown and creates an independent,
+chunked Pagefind full-text index inside every current release family. Search stays fully static and
+loads query-relevant chunks from the family artifact; it needs no hosted service or special web
+server configuration. Material navigation prunes inactive branches from each page so the full
+navigation hierarchy does not multiply the generated HTML size. Repeat `--family NAME` to override
 `upstream.families` for one run while preserving upstream ordering. Smoke accepts at most one
 selected family; without one it uses the newest family.
 
@@ -150,6 +152,10 @@ The assembled site contains:
 - `build-manifest.json`, containing the build profile, upstream SHAs, archive states, timestamps, and the pipeline fingerprint;
 - `SERVICENOW-LICENSE.txt`, retaining upstream attribution and license information; and
 - one directory per current or retained archived family, with a generated Material landing page at the family root.
+
+Each current production-family directory also contains a `pagefind/` bundle. Smoke families omit
+search, while retained archived families remain immutable and may contain their historical search
+implementation.
 
 Packaging creates `sndocs-site.tar.gz`, `sndocs-site.zip`, and a SHA-256 file for each archive.
 The scheduled GitHub Actions workflow refreshes a rolling `site-artifact` GitHub Release only
