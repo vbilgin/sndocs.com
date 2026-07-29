@@ -7,7 +7,7 @@ import re
 import shutil
 import textwrap
 from pathlib import Path, PurePosixPath
-from urllib.parse import unquote, urlparse
+from urllib.parse import quote, unquote, urlparse
 
 import yaml
 from markdown import markdown
@@ -81,18 +81,39 @@ def rewrite_links(
     families: set[str],
     repository: str,
     resolver: FamilyLinkResolver | None = None,
+    preview_paths: set[PurePosixPath] | None = None,
+    preview_stats: dict[str, int] | None = None,
 ) -> str:
     raw_link_re = re.compile(
         rf"https://raw\.githubusercontent\.com/{re.escape(repository)}/([^/]+)/markdown/([^\s)\]]+\.md)(#[^\s)]*)?"
     )
+
+    def externalize(family: str, target: str, fragment: str) -> str:
+        if preview_stats is not None:
+            preview_stats["externalized_links"] = (
+                preview_stats.get("externalized_links", 0) + 1
+            )
+        encoded = quote(target, safe="/")
+        return (
+            f"https://github.com/{repository}/blob/{family}/markdown/"
+            f"{encoded}{fragment}"
+        )
+
     def replace(match: re.Match) -> str:
         family, target, fragment = match.group(1), unquote(match.group(2)), match.group(3) or ""
         if family not in families:
+            if preview_paths is not None:
+                return externalize(family, target, fragment)
             return match.group(0)
         if family != current_family:
+            if preview_paths is not None:
+                return externalize(family, target, fragment)
             return pretty_url(family, target, fragment)
         if resolver:
             target = str(resolver.resolve(target, current_path))
+            resolved = PurePosixPath(target)
+            if preview_paths is not None and resolved in resolver.paths and resolved not in preview_paths:
+                return externalize(family, target, fragment)
         relative = os.path.relpath(target, start=current_path.parent.as_posix())
         return PurePosixPath(relative).as_posix() + fragment
     return raw_link_re.sub(replace, body)
@@ -361,6 +382,8 @@ def transform_document(
     repository: str = "ServiceNow/ServiceNowDocs",
     resolver: FamilyLinkResolver | None = None,
     source_files: set[PurePosixPath] | None = None,
+    preview_paths: set[PurePosixPath] | None = None,
+    preview_stats: dict[str, int] | None = None,
 ) -> str:
     metadata, body = split_frontmatter(text)
     if isinstance(metadata.get("title"), str):
@@ -368,11 +391,27 @@ def transform_document(
     if not body.strip():
         title = metadata.get("title") or relative_path.stem.replace("-", " ").title()
         body = f"# {title}\n\n!!! warning \"Source content unavailable\"\n    The upstream file is currently empty. This placeholder preserves incoming links.\n"
-    body = rewrite_links(body, family, relative_path, families, repository, resolver)
+    body = rewrite_links(
+        body,
+        family,
+        relative_path,
+        families,
+        repository,
+        resolver,
+        preview_paths,
+        preview_stats,
+    )
     body = transform_navigation_cards(body, relative_path)
     body = rewrite_missing_images(body, relative_path, source_files, resolver)
     body = transform_table_markdown(body, relative_path, resolver)
     body = normalize_fenced_code_boundaries(body)
+    if preview_paths is not None:
+        body = (
+            '!!! warning "Incomplete preview"\n'
+            "    This page is part of a deterministic sample. Links to topics outside "
+            "the sample open their source on GitHub.\n\n"
+            + body
+        )
     body = enrich_body(body, metadata, family, source_url)
     return "---\n" + yaml.safe_dump(metadata, sort_keys=False, allow_unicode=True).strip() + "\n---\n\n" + body
 
@@ -418,6 +457,8 @@ def transform_tree(
     resolver: FamilyLinkResolver | None = None,
     *,
     finalize: bool = True,
+    include_paths: set[PurePosixPath] | None = None,
+    preview_stats: dict[str, int] | None = None,
 ) -> dict:
     resolver = resolver or FamilyLinkResolver(source_markdown, family)
     source_files = {
@@ -426,8 +467,10 @@ def transform_tree(
         if path.is_file()
     }
     destinations: dict[str, PurePosixPath] = {}
-    for source in source_markdown.rglob("*.md"):
+    for source in sorted(source_markdown.rglob("*.md")):
         relative = PurePosixPath(source.relative_to(source_markdown).as_posix())
+        if include_paths is not None and relative not in include_paths:
+            continue
         collision_key = relative.as_posix().casefold()
         if collision_key in destinations:
             raise ValueError(f"case-insensitive output collision: {destinations[collision_key]} and {relative}")
@@ -446,6 +489,8 @@ def transform_tree(
                 repository,
                 resolver,
                 source_files,
+                include_paths,
+                preview_stats,
             ),
             encoding="utf-8",
         )

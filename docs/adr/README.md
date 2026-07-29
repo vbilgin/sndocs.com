@@ -33,3 +33,4 @@ Accepted ADRs are immutable except for corrections and explicit supersession met
 - [ADR-0018: Normalize malformed upstream presentation structures](0018-normalize-malformed-upstream-presentation.md)
 - [ADR-0019: Use chunked Pagefind search for current families](0019-pagefind-static-search.md)
 - [ADR-0020: Configure the site header and UI brand](0020-configure-site-header-and-ui-brand.md)
+- [ADR-0021: Add a deterministic sampled preview](0021-add-deterministic-sampled-preview.md)

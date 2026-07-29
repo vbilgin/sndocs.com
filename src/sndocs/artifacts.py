@@ -17,6 +17,8 @@ def validate_site(site: Path) -> None:
     if versions["latest"] != manifest["latest"]:
         raise ValueError("manifest and versions.json disagree about the latest family")
     profile = manifest.get("build_profile", "production")
+    if profile not in {"production", "smoke", "preview"}:
+        raise ValueError(f"unsupported build profile: {profile}")
     for family, record in manifest["families"].items():
         if not (site / family / "index.html").exists():
             raise ValueError(f"family {family} has no generated index.html")
@@ -38,7 +40,7 @@ def validate_site(site: Path) -> None:
                 pagefind_dir / "pagefind-component-ui.css",
             ]
             legacy_search = site / family / "search" / "search_index.json"
-            if profile == "production":
+            if profile in {"production", "preview"}:
                 if (
                     not all(path.is_file() for path in pagefind_required)
                     or not any((pagefind_dir / "index").glob("*.pf_index"))
@@ -46,6 +48,18 @@ def validate_site(site: Path) -> None:
                     raise ValueError(f"current family {family} has no Pagefind search bundle")
                 if legacy_search.exists():
                     raise ValueError(f"current family {family} retains a legacy Material search index")
+                if profile == "preview":
+                    sample = record.get("sample", {})
+                    required_sample_fields = {
+                        "strategy",
+                        "source_markdown_files",
+                        "source_areas",
+                        "selected_markdown_files",
+                        "selected_topic_files",
+                        "externalized_links",
+                    }
+                    if not required_sample_fields <= sample.keys():
+                        raise ValueError(f"preview family {family} has incomplete sample metadata")
             elif pagefind_dir.exists() or legacy_search.exists():
                 raise ValueError(f"smoke family {family} unexpectedly contains search output")
     current_families = set(manifest["families"])
@@ -62,8 +76,9 @@ def _files(site: Path):
 
 def package_site(site: Path, destination: Path, basename: str) -> list[Path]:
     manifest = json.loads((site / "build-manifest.json").read_text(encoding="utf-8"))
-    if manifest.get("build_profile", "production") != "production":
-        raise ValueError("smoke builds cannot be packaged as production artifacts")
+    profile = manifest.get("build_profile", "production")
+    if profile != "production":
+        raise ValueError(f"{profile} builds cannot be packaged as production artifacts")
     validate_site(site)
     destination.mkdir(parents=True, exist_ok=True)
     tar_path = destination / f"{basename}.tar.gz"

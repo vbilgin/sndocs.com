@@ -25,7 +25,12 @@ class _Formatter(argparse.RawDescriptionHelpFormatter):
     pass
 
 
-def _common_options(command: argparse.ArgumentParser, *, suppress_defaults: bool = True) -> None:
+def _common_options(
+    command: argparse.ArgumentParser,
+    *,
+    suppress_defaults: bool = True,
+    include_json: bool = True,
+) -> None:
     default = argparse.SUPPRESS if suppress_defaults else Path("pipeline.toml")
     command.add_argument(
         "--config",
@@ -33,13 +38,14 @@ def _common_options(command: argparse.ArgumentParser, *, suppress_defaults: bool
         default=default,
         help="pipeline configuration file (default: pipeline.toml)",
     )
-    json_default = argparse.SUPPRESS if suppress_defaults else False
-    command.add_argument(
-        "--json",
-        action="store_true",
-        default=json_default,
-        help="write one machine-readable result object to stdout",
-    )
+    if include_json:
+        json_default = argparse.SUPPRESS if suppress_defaults else False
+        command.add_argument(
+            "--json",
+            action="store_true",
+            default=json_default,
+            help="write one machine-readable result object to stdout",
+        )
 
 
 def parser() -> argparse.ArgumentParser:
@@ -122,6 +128,34 @@ def parser() -> argparse.ArgumentParser:
         help="report rebuild, reuse, and archive actions without writing files",
     )
 
+    preview = commands.add_parser(
+        "preview",
+        help="build and serve a fast production-like documentation sample",
+        description=(
+            "Build a deterministic sample of every selected family, validate it, and serve it.\n"
+            "Existing output is refused unless --clean is supplied."
+        ),
+        formatter_class=_Formatter,
+        epilog=(
+            "Example:\n"
+            "  sndocs preview --output site-preview --source ../ServiceNowDocs"
+        ),
+    )
+    _common_options(preview, include_json=False)
+    preview.add_argument("--output", type=Path, required=True, help="generated preview site directory")
+    preview.add_argument("--clean", action="store_true", help="remove an existing output directory before building")
+    preview.add_argument("--work-dir", type=Path, help="preserve intermediate build files at this path")
+    preview.add_argument("--source", type=Path, help="use this clean local clone offline instead of GitHub")
+    preview.add_argument(
+        "--family",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="preview this family; repeat to select several in upstream order",
+    )
+    preview.add_argument("--bind", default="127.0.0.1", help="address to bind (default: 127.0.0.1)")
+    preview.add_argument("--port", type=int, default=0, help="port to bind (default: an available port)")
+
     package = commands.add_parser(
         "package",
         help="validate and package a production site",
@@ -149,7 +183,12 @@ def parser() -> argparse.ArgumentParser:
         formatter_class=_Formatter,
     )
     _common_options(audit_ui)
-    audit_ui.add_argument("--site", type=Path, required=True, help="assembled production or smoke site")
+    audit_ui.add_argument(
+        "--site",
+        type=Path,
+        required=True,
+        help="assembled production, smoke, or preview site",
+    )
     audit_ui.add_argument("--output", type=Path, required=True, help="HTML, JSON, and screenshot report directory")
     audit_ui.add_argument("--clean", action="store_true", help="remove an existing report directory")
     audit_ui.add_argument("--sample-size", type=int, default=100, help="additional pages to render (default: 100)")
@@ -201,7 +240,7 @@ def _selected_families(args: argparse.Namespace) -> tuple[str, ...] | None:
     if len(families) != len(set(families)):
         duplicates = sorted({family for family in families if families.count(family) > 1})
         raise ValueError(f"duplicate release families: {', '.join(duplicates)}")
-    if args.smoke and len(families) > 1:
+    if getattr(args, "smoke", False) and len(families) > 1:
         raise ValueError("--smoke accepts at most one --family")
     return tuple(families) if families else None
 
@@ -229,9 +268,65 @@ def _write_github_output(changed: bool, latest: str) -> None:
         stream.write(f"latest={latest}\n")
 
 
+def _serve_site(site: Path, bind: str, port: int) -> None:
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(site))
+    server = http.server.ThreadingHTTPServer((bind, port), handler)
+    host, allocated_port = server.server_address[:2]
+    display_host = bind if bind else host
+    print(f"Previewing {site} at http://{display_host}:{allocated_port}/", flush=True)
+    print("Press Ctrl-C to stop.", flush=True)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nPreview stopped.", flush=True)
+    finally:
+        server.server_close()
+
+
+def _build_output(
+    args: argparse.Namespace,
+    settings,
+    output: Path,
+    source_repository,
+    discovery_result,
+    *,
+    build_profile: str,
+    reuse_from: Path | None = None,
+) -> tuple[dict, bool]:
+    if output.exists():
+        shutil.rmtree(output)
+    if args.work_dir:
+        args.work_dir.mkdir(parents=True, exist_ok=True)
+        return build_site(
+            settings,
+            output,
+            args.work_dir.resolve(),
+            reuse_from,
+            source_repository,
+            discovery_result,
+            build_profile=build_profile,
+        )
+    temporary_root = Path.cwd() / ".temp"
+    temporary_root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="sndocs-", dir=temporary_root) as temporary:
+        print(f"Automatic workspace: {temporary}", file=sys.stderr)
+        result = build_site(
+            settings,
+            output,
+            Path(temporary),
+            reuse_from,
+            source_repository,
+            discovery_result,
+            build_profile=build_profile,
+            cleanup_work=True,
+        )
+        print(f"Automatic workspace removed: {temporary}", file=sys.stderr)
+        return result
+
+
 def _run(args: argparse.Namespace, argument_parser: argparse.ArgumentParser) -> int:
-    if args.command == "serve" and getattr(args, "json", False):
-        argument_parser.error("--json is not supported by serve")
+    if args.command in {"serve", "preview"} and getattr(args, "json", False):
+        argument_parser.error(f"--json is not supported by {args.command}")
     if args.command == "quality":
         ruleset = load_quality_ruleset()
         if args.quality_command == "validate":
@@ -334,35 +429,15 @@ def _run(args: argparse.Namespace, argument_parser: argparse.ArgumentParser) -> 
             _emit(args, result, summary)
             return 0
         assert output is not None
-        if output.exists():
-            shutil.rmtree(output)
-        if args.work_dir:
-            args.work_dir.mkdir(parents=True, exist_ok=True)
-            manifest, changed = build_site(
-                settings,
-                output,
-                args.work_dir.resolve(),
-                reuse_from,
-                source_repository,
-                discovery_result,
-                build_profile=build_profile,
-            )
-        else:
-            temporary_root = Path.cwd() / ".temp"
-            temporary_root.mkdir(parents=True, exist_ok=True)
-            with tempfile.TemporaryDirectory(prefix="sndocs-", dir=temporary_root) as temporary:
-                print(f"Automatic workspace: {temporary}", file=sys.stderr)
-                manifest, changed = build_site(
-                    settings,
-                    output,
-                    Path(temporary),
-                    reuse_from,
-                    source_repository,
-                    discovery_result,
-                    build_profile=build_profile,
-                    cleanup_work=True,
-                )
-                print(f"Automatic workspace removed: {temporary}", file=sys.stderr)
+        manifest, changed = _build_output(
+            args,
+            settings,
+            output,
+            source_repository,
+            discovery_result,
+            build_profile=build_profile,
+            reuse_from=reuse_from,
+        )
         _write_github_output(changed, manifest["latest"])
         result = {
             "changed": changed,
@@ -373,6 +448,29 @@ def _run(args: argparse.Namespace, argument_parser: argparse.ArgumentParser) -> 
             "manifest": str(output / MANIFEST_NAME),
         }
         _emit(args, result, f"Built {len(result['families'])} families at {output}; changed={str(changed).lower()}")
+        return 0
+
+    if args.command == "preview":
+        output = args.output.resolve()
+        if output.exists() and not args.clean:
+            argument_parser.error(f"output already exists: {output}; pass --clean to replace it")
+        allowlist = _selected_families(args)
+        source_repository = _local_source(args.source, settings)
+        discovery_result = discover(settings, source_repository, allowlist)
+        manifest, _changed = _build_output(
+            args,
+            settings,
+            output,
+            source_repository,
+            discovery_result,
+            build_profile="preview",
+        )
+        validate_site(output)
+        print(
+            f"Built and validated preview for {len(manifest['families'])} families at {output}",
+            flush=True,
+        )
+        _serve_site(output, args.bind, args.port)
         return 0
 
     if args.command == "package":
@@ -422,18 +520,7 @@ def _run(args: argparse.Namespace, argument_parser: argparse.ArgumentParser) -> 
         site = args.site.resolve()
         if not site.is_dir():
             argument_parser.error(f"site directory does not exist: {site}; build it first or pass --site PATH")
-        handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(site))
-        server = http.server.ThreadingHTTPServer((args.bind, args.port), handler)
-        host, port = server.server_address[:2]
-        display_host = args.bind if args.bind else host
-        print(f"Previewing {site} at http://{display_host}:{port}/")
-        print("Press Ctrl-C to stop.")
-        try:
-            server.serve_forever()
-        except KeyboardInterrupt:
-            print("\nPreview stopped.")
-        finally:
-            server.server_close()
+        _serve_site(site, args.bind, args.port)
         return 0
     return 2
 

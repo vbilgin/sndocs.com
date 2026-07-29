@@ -72,6 +72,27 @@ navigation hierarchy does not multiply the generated HTML size. Repeat `--family
 `upstream.families` for one run while preserving upstream ordering. Smoke accepts at most one
 selected family; without one it uses the newest family.
 
+For the fastest production-like visual check, build and serve a deterministic sample:
+
+```shell
+.venv/bin/sndocs --config ./local/test_builds/aus/pipeline.australia.toml preview --output ./local/test_builds/aus/site --source ../australia
+```
+
+Preview includes every selected family, strict MkDocs rendering, the version selector, and Pagefind
+search. Within each family it transforms every top-level source-area `index.md`, the first valid
+topic declared by that index, and one additional stable path-hash selection. The current Australia
+source selects 159 of 48,989 Markdown files across 55 source areas. A generated coverage page lists
+the complete sample, while links to existing topics outside the sample open the corresponding
+GitHub source. Preview output is marked with `build_profile: preview`, cannot be reused as another
+profile, and cannot be packaged as a production artifact.
+
+The command validates the completed sample and then serves it on `127.0.0.1` using an available
+port, printing the exact URL before it waits. Use `--bind` or `--port` to override the server
+address, and press Ctrl-C to stop it; the generated output remains available afterward. Existing
+output still requires `--clean`. Preview deliberately has no `--json`, `--dry-run`, `--smoke`, or
+`--reuse-from` mode and does not open a browser. It is a quick transformation, navigation, theme,
+assembly, and search check—not a substitute for complete-family smoke or production validation.
+
 Preview incremental decisions without writing or deleting files:
 
 ```shell

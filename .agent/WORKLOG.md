@@ -4,6 +4,29 @@ Reverse-chronological record of significant project work. This is a historical i
 
 Older entries are archived in [.agent/worklog/2026-H2.md](worklog/2026-H2.md).
 
+## 2026-07-28 — Add fast sampled preview command
+
+- **Work performed by:** Codex, with direction from Victor Bilgin
+- **Commit:** Pending (`Add fast sampled preview command` intended subject)
+
+### Outcome
+
+Added a deterministic production-like preview that samples every selected family's source areas, builds strict searchable output, validates it, and serves it on an available local port.
+
+### Changes and decisions
+
+- Added `sndocs preview` with safe output replacement, selected-family support, automatic Pagefind generation, validation before serving, random-port allocation, and clean interruption without automatic browser launch.
+- Selected every source-area index plus up to two deterministic topics per area; the Australia source yields 159 of 48,989 Markdown files across 55 areas.
+- Kept sampled navigation local, externalized links to omitted existing topics as human-readable GitHub source links, retained genuine missing-target placeholders, and recorded preview coverage in manifests.
+- Added preview-only validation and packaging boundaries without changing production, smoke, reuse, archive, or schema-version contracts.
+- Documented the workflow and recorded its intentionally limited validation role in ADR-0021.
+
+### Verification
+
+- Targeted sampler, transformation, strict MkDocs, Pagefind, artifact, CLI, and existing profile tests passed; the full suite passed with 144 tests and one environment-specific skip.
+- A real Australia preview at SHA `ea4a4a3` selected 159 of 48,989 Markdown files, transformed them in 2.4 seconds, rendered strict MkDocs output in 9.0 seconds, indexed 227 generated pages in 0.9 seconds, passed artifact validation, served on an allocated localhost port, and stopped cleanly.
+- Context and worklog limits, Python compilation, documentation structure, and `git diff --check` passed.
+
 ## 2026-07-28 — Update site header and branding
 
 - **Work performed by:** Codex, with direction from Victor Bilgin

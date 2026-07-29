@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
@@ -16,6 +17,7 @@ import yaml
 from . import __version__
 from .discovery import discover
 from .links import FamilyLinkResolver
+from .metadata import read_frontmatter
 from .models import Discovery, Settings
 from .navigation import parse_index
 from .source import RemoteSource, SourceRepository
@@ -24,6 +26,96 @@ from .transform import transform_tree, write_missing_placeholders
 MANIFEST_NAME = "build-manifest.json"
 LINK_REPORT_NAME = "link-report.json"
 PACKAGE_ROOT = Path(__file__).resolve().parent
+PREVIEW_STRATEGY = "two-topics-per-source-area-v1"
+BUILD_PROFILES = {"production", "smoke", "preview"}
+
+
+@dataclass(frozen=True)
+class PreviewSample:
+    paths: frozenset[PurePosixPath]
+    topics_by_area: dict[str, tuple[PurePosixPath, ...]]
+    total_markdown_files: int
+
+    @property
+    def source_areas(self) -> int:
+        return len(self.topics_by_area)
+
+    @property
+    def selected_markdown_files(self) -> int:
+        return len(self.paths)
+
+    @property
+    def selected_topic_files(self) -> int:
+        return sum(len(paths) for paths in self.topics_by_area.values())
+
+
+def _nav_paths(items: list) -> list[PurePosixPath]:
+    paths: list[PurePosixPath] = []
+    for item in items:
+        if isinstance(item, str):
+            paths.append(PurePosixPath(item))
+            continue
+        if not isinstance(item, dict):
+            continue
+        for value in item.values():
+            if isinstance(value, str):
+                paths.append(PurePosixPath(value))
+            elif isinstance(value, list):
+                paths.extend(_nav_paths(value))
+    return paths
+
+
+def _stable_preview_order(path: PurePosixPath) -> tuple[str, str]:
+    digest = hashlib.sha256(path.as_posix().encode()).hexdigest()
+    return digest, path.as_posix()
+
+
+def select_preview_sample(source_markdown: Path) -> PreviewSample:
+    """Select every area index and up to two deterministic topic pages per area."""
+    markdown_paths = sorted(
+        (
+            PurePosixPath(path.relative_to(source_markdown).as_posix())
+            for path in source_markdown.rglob("*.md")
+        ),
+        key=str,
+    )
+    by_area: dict[str, list[PurePosixPath]] = {}
+    for path in markdown_paths:
+        if len(path.parts) > 1:
+            by_area.setdefault(path.parts[0], []).append(path)
+
+    selected: set[PurePosixPath] = set()
+    topics_by_area: dict[str, tuple[PurePosixPath, ...]] = {}
+    for area in sorted(by_area):
+        paths = by_area[area]
+        index = PurePosixPath(area) / "index.md"
+        if index in paths:
+            selected.add(index)
+        topics = [path for path in paths if path.name != "index.md"]
+        declared: list[PurePosixPath] = []
+        if index in paths:
+            parsed = parse_index(
+                (source_markdown / Path(index.as_posix())).read_text(
+                    encoding="utf-8", errors="replace"
+                )
+            )
+            declared = [path for path in _nav_paths(parsed) if path in topics]
+        chosen: list[PurePosixPath] = []
+        if declared:
+            chosen.append(declared[0])
+        elif topics:
+            chosen.append(min(topics, key=_stable_preview_order))
+        remaining = [path for path in topics if path not in chosen]
+        if remaining:
+            chosen.append(min(remaining, key=_stable_preview_order))
+        topics_by_area[area] = tuple(chosen)
+        selected.update(chosen)
+
+    return PreviewSample(
+        paths=frozenset(selected),
+        topics_by_area=topics_by_area,
+        total_markdown_files=len(markdown_paths),
+    )
 
 
 def pipeline_fingerprint(
@@ -72,7 +164,7 @@ def plan_build(
     build_profile: str = "production",
 ) -> dict:
     """Return the side-effect-free family reuse/rebuild/archive plan."""
-    if build_profile not in {"production", "smoke"}:
+    if build_profile not in BUILD_PROFILES:
         raise ValueError(f"unsupported build profile: {build_profile}")
     previous = read_manifest(previous_site)
     fingerprint = pipeline_fingerprint(settings)
@@ -146,7 +238,77 @@ def publication_nav(
     return nav
 
 
-def write_family_landing(docs: Path, family: str, discovery: Discovery) -> None:
+def _document_title(source_markdown: Path, path: PurePosixPath) -> str:
+    metadata = read_frontmatter(source_markdown / Path(path.as_posix()))
+    title = metadata.get("title")
+    if isinstance(title, str) and title.strip():
+        return title.replace("\\[", "[").replace("\\]", "]").strip()
+    return path.stem.replace("-", " ").replace("_", " ").title()
+
+
+def _markdown_link_title(title: str) -> str:
+    return title.replace("[", "\\[").replace("]", "\\]")
+
+
+def preview_nav(
+    source_markdown: Path,
+    discovery: Discovery,
+    sample: PreviewSample,
+) -> list[dict]:
+    nav: list[dict] = [{"Preview coverage": "preview-sample.md"}]
+    for publication in discovery.publications:
+        index = PurePosixPath(publication.slug) / "index.md"
+        if index not in sample.paths:
+            continue
+        items: list = [index.as_posix()]
+        for path in sample.topics_by_area.get(publication.slug, ()):
+            items.append({_document_title(source_markdown, path): path.as_posix()})
+        nav.append({publication.name: items})
+    return nav
+
+
+def write_preview_coverage(
+    docs: Path,
+    source_markdown: Path,
+    family: str,
+    sample: PreviewSample,
+) -> None:
+    sections: list[str] = []
+    for area, topics in sample.topics_by_area.items():
+        links: list[str] = []
+        index = PurePosixPath(area) / "index.md"
+        if index in sample.paths:
+            title = _markdown_link_title(_document_title(source_markdown, index))
+            links.append(f"- [{title}]({index.as_posix()})")
+        links.extend(
+            f"- [{_markdown_link_title(_document_title(source_markdown, path))}]"
+            f"({path.as_posix()})"
+            for path in topics
+        )
+        if links:
+            sections.append(f"## {area.replace('-', ' ').title()}\n\n" + "\n".join(links))
+    content = (
+        f"---\ntitle: {family.title()} preview coverage\nrelease: {family}\n---\n\n"
+        "# Sample preview coverage\n\n"
+        '!!! warning "Incomplete preview"\n'
+        "    This site contains a deterministic sample of the upstream documentation. "
+        "Links to topics outside the sample open their source on GitHub.\n\n"
+        f"This preview selected **{sample.selected_markdown_files}** of "
+        f"**{sample.total_markdown_files}** Markdown files across "
+        f"**{sample.source_areas}** source areas.\n\n"
+        + "\n\n".join(sections)
+        + "\n"
+    )
+    (docs / "preview-sample.md").write_text(content, encoding="utf-8")
+
+
+def write_family_landing(
+    docs: Path,
+    family: str,
+    discovery: Discovery,
+    *,
+    preview: bool = False,
+) -> None:
     publications = []
     for publication in discovery.publications:
         if (docs / publication.slug / "index.md").exists():
@@ -155,7 +317,14 @@ def write_family_landing(docs: Path, family: str, discovery: Discovery) -> None:
     content = (
         f"---\ntitle: {family.title()} documentation\nrelease: {family}\n---\n\n"
         f"# {family.title()} documentation\n\n"
-        "Select a publication:\n\n"
+        + (
+            '!!! warning "Incomplete preview"\n'
+            "    This site contains a deterministic sample of the upstream documentation. "
+            "Use [preview coverage](preview-sample.md) to inspect the selected pages.\n\n"
+            if preview
+            else ""
+        )
+        + "Select a publication:\n\n"
         + "\n".join(publications)
         + "\n"
     )
@@ -282,7 +451,8 @@ def build_search_index(site: Path) -> None:
 
 def build_family(
     settings: Settings, discovery: Discovery, family: str, work_root: Path, output: Path,
-    source_repository: SourceRepository, search: bool = True,
+    source_repository: SourceRepository, search: bool = True, preview: bool = False,
+    sample_metadata: dict | None = None,
 ) -> dict:
     work = work_root / family
     source = work / "source"
@@ -292,6 +462,8 @@ def build_family(
     _phase(family, "source ready", started, source)
     docs = work / "docs"
     resolver = FamilyLinkResolver(source / "markdown", family)
+    sample = select_preview_sample(source / "markdown") if preview else None
+    preview_stats = {"externalized_links": 0} if preview else None
     started = time.monotonic()
     print(f"Build [{family}] transforming Markdown", file=sys.stderr)
     transform_tree(
@@ -302,11 +474,30 @@ def build_family(
         settings.repository,
         resolver,
         finalize=False,
+        include_paths=set(sample.paths) if sample else None,
+        preview_stats=preview_stats,
     )
-    nav = publication_nav(source, discovery, resolver)
+    nav = (
+        preview_nav(source / "markdown", discovery, sample)
+        if sample
+        else publication_nav(source, discovery, resolver)
+    )
     write_missing_placeholders(docs, resolver)
-    write_family_landing(docs, family, discovery)
+    if sample:
+        write_preview_coverage(docs, source / "markdown", family, sample)
+    write_family_landing(docs, family, discovery, preview=preview)
     link_report = resolver.report()
+    if sample and sample_metadata is not None:
+        sample_metadata.update(
+            {
+                "strategy": PREVIEW_STRATEGY,
+                "source_markdown_files": sample.total_markdown_files,
+                "source_areas": sample.source_areas,
+                "selected_markdown_files": sample.selected_markdown_files,
+                "selected_topic_files": sample.selected_topic_files,
+                "externalized_links": preview_stats["externalized_links"],
+            }
+        )
     _phase(family, "Markdown ready", started, docs)
     family_output = output / family
     cache_tag = hashlib.sha256(
@@ -437,7 +628,7 @@ def build_site(
     source_repository: SourceRepository | None = None, discovery_result: Discovery | None = None,
     *, build_profile: str = "production", cleanup_work: bool = False,
 ) -> tuple[dict, bool]:
-    if build_profile not in {"production", "smoke"}:
+    if build_profile not in BUILD_PROFILES:
         raise ValueError(f"unsupported build profile: {build_profile}")
     source_repository = source_repository or RemoteSource()
     discovery = discovery_result or discover(settings, source_repository)
@@ -465,17 +656,32 @@ def build_site(
             method = copy_reused_family(previous_site / family, output / family)
             print(f"Build [{family}] reused previous output ({method})", file=sys.stderr)
             family_link_reports[family] = previous_link_reports.get(family, empty_link_report(family))
+            sample_metadata = previous_families.get(family, {}).get("sample")
         else:
+            sample_metadata = {}
             try:
-                family_link_reports[family] = build_family(
-                    settings,
-                    discovery,
-                    family,
-                    work,
-                    output,
-                    source_repository,
-                    search=build_profile == "production",
-                )
+                if build_profile == "preview":
+                    family_link_reports[family] = build_family(
+                        settings,
+                        discovery,
+                        family,
+                        work,
+                        output,
+                        source_repository,
+                        search=True,
+                        preview=True,
+                        sample_metadata=sample_metadata,
+                    )
+                else:
+                    family_link_reports[family] = build_family(
+                        settings,
+                        discovery,
+                        family,
+                        work,
+                        output,
+                        source_repository,
+                        search=build_profile == "production",
+                    )
             finally:
                 if cleanup_work and (work / family).exists():
                     shutil.rmtree(work / family)
@@ -487,6 +693,8 @@ def build_site(
             "path": f"/{family}/",
             "link_counts": family_link_reports[family]["counts"],
         }
+        if build_profile == "preview" and sample_metadata:
+            family_records[family]["sample"] = sample_metadata
 
     archived_families = previous_families.items() if build_profile == "production" else ()
     for family, record in archived_families:
