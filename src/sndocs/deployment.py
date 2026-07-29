@@ -131,12 +131,13 @@ def plan_latest_release(
 
 def _tree_entries(root: Path) -> list[dict]:
     entries = []
-    for path in sorted(candidate for candidate in root.rglob("*") if candidate.is_file()):
+    for path in (candidate for candidate in root.rglob("*") if candidate.is_file()):
         relative = path.relative_to(root).as_posix()
         if PurePosixPath(relative).is_absolute() or ".." in PurePosixPath(relative).parts:
             raise ValueError(f"unsafe inventory path: {relative}")
         digest = sha256_file(path)
         entries.append({"path": relative, "bytes": path.stat().st_size, "sha256": digest})
+    entries.sort(key=lambda entry: entry["path"])
     return entries
 
 

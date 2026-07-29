@@ -181,6 +181,27 @@ def test_family_inventory_is_deterministic_and_rejects_corruption(tmp_path):
         validate_family_inventory(corrupted)
 
 
+def test_family_inventory_sorts_prefix_collisions_by_serialized_path(tmp_path):
+    site = _site(tmp_path, "zurich", "sha")
+    family_root = site / "zurich"
+    for directory in ("topic", "topic-expanded"):
+        page = family_root / directory / "index.html"
+        page.parent.mkdir()
+        page.write_text(directory, encoding="utf-8")
+
+    first = build_family_inventory(
+        site, "zurich", "sha", FINGERPRINT, created_at="now"
+    )
+    second = build_family_inventory(
+        site, "zurich", "sha", FINGERPRINT, created_at="later"
+    )
+    paths = [entry["path"] for entry in first["objects"]]
+
+    assert paths == sorted(paths)
+    assert paths.index("topic-expanded/index.html") < paths.index("topic/index.html")
+    assert first["tree_sha256"] == second["tree_sha256"]
+
+
 def test_candidate_archives_only_previously_published_families(tmp_path):
     _old_site, old_root, _old_inventory, active = _release(
         tmp_path, "yokohama", "sha-1"

@@ -4,6 +4,26 @@ Reverse-chronological record of significant project work. This is a historical i
 
 Older entries are archived in [.agent/worklog/2026-H2.md](worklog/2026-H2.md).
 
+## 2026-07-29 — Repair deterministic family-inventory ordering
+
+- **Work performed by:** Codex, with direction from Victor Bilgin
+- **Commit:** Pending (`Repair deterministic family-inventory ordering` intended subject)
+
+### Outcome
+
+Corrected the family inventory generator after the first complete Australia publication build exposed a mismatch between filesystem `Path` ordering and the inventory validator's serialized POSIX path ordering.
+
+### Changes and decisions
+
+- Sort completed inventory entries lexically by their serialized `path` field before deriving the tree digest, preserving the existing validator, schema, artifact IDs, and deterministic inventory contract.
+- Added a regression fixture with prefix-colliding directories to exercise the ordering difference that small deployment fixtures previously missed.
+- Kept the fix within the accepted Cloudflare release design; no architecture decision or public interface changed.
+
+### Verification
+
+- The focused prefix-collision regression and all 11 deployment tests passed.
+- The full Python suite passed with 155 tests and one environment-specific skip after enabling loopback access for browser/UI tests; `git diff --check` passed.
+
 ## 2026-07-28 — Repair first publication CI gate
 
 - **Work performed by:** Codex, with direction from Victor Bilgin
