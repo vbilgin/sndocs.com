@@ -4,10 +4,33 @@ Reverse-chronological record of significant project work. This is a historical i
 
 Older entries are archived in [.agent/worklog/2026-H2.md](worklog/2026-H2.md).
 
+## 2026-07-29 — Temporarily move preview acceptance to manual approval
+
+- **Work performed by:** Codex, with direction from Victor Bilgin
+- **Commit:** Pending (`Temporarily require manual preview approval` intended subject)
+
+### Outcome
+
+Removed automated live preview acceptance from publication during the initial rollout while retaining protected production approval, post-deployment HTTP smoke checks, and automatic rollback.
+
+### Changes and decisions
+
+- The second live candidate's HTTP checks passed, but browser acceptance rejected MkDocs Material's optional `https://api.github.com/repos/vbilgin/sndocs.com/releases/latest` request because the rolling recovery release does not exist before first production promotion.
+- Removed the `validate-preview` job and made production promotion wait directly after candidate assembly at the protected `production` Environment, where approval now records completion of the documented manual preview checklist.
+- Kept the browser verifier and local browser regression tests available for later restoration, deferred its external-response exception, and retained the production HTTP smoke-and-rollback gate.
+- Treated manual validation as a temporary rollout measure to revisit after two successful production releases and the observation period; the accepted release architecture is unchanged, so no ADR was required.
+
+### Verification
+
+- Workflow YAML parsing and graph assertions confirmed that `validate-preview` is absent, production promotion depends directly on candidate assembly, and the protected environment remains configured.
+- The full Python suite passed with 156 tests and one environment-specific skip; all eight Worker request tests passed.
+- `git diff --check` passed, and the current context remains within its line and word limits.
+
 ## 2026-07-29 — Repair live preview validation
 
 - **Work performed by:** Codex, with direction from Victor Bilgin
-- **Commit:** Pending (`Repair live preview validation` intended subject)
+- **Committed by:** Victor Bilgin
+- **Commit:** `26c5344` — `Repair live preview validation`
 
 ### Outcome
 
@@ -24,7 +47,7 @@ Diagnosed and corrected both defects exposed by the first live `Validate preview
 
 - The full Python suite passed with 156 tests and one environment-specific skip after enabling loopback access for browser/UI tests.
 - All eight Worker tests and both preview and production Wrangler dry runs passed.
-- Live deployment verification remains pending commit, push, corrected preview bootstrap, and a fresh publication run.
+- The corrected preview Worker later passed live full GET, HEAD, and range checks; publication browser acceptance subsequently exposed an unrelated optional GitHub API `404`.
 
 ## 2026-07-29 — Repair deterministic family-inventory ordering
 

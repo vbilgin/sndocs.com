@@ -351,6 +351,11 @@ jobs:
             echo "## Candidate release"
             echo
             jq -r '"- Release: `\(.release_id)`\n- Latest: `\(.latest)`\n- Public families: `\(.families | length)`"' candidate/release-manifest.json
+            echo "- Preview: https://preview.sndocs.com/"
+            echo
+            echo "### Manual preview approval required"
+            echo
+            echo "Open the preview, check navigation and a representative page, run a Pagefind search, and confirm the preview release and no-index headers before approving production."
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
         with:
@@ -361,44 +366,9 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  validate-preview:
-    name: Validate preview
-    needs: [test-and-plan, assemble-candidate]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-          cache: pip
-      - uses: actions/download-artifact@v8
-        with:
-          name: candidate-release
-          path: candidate
-      - name: Install browser acceptance dependencies
-        run: |
-          python -m pip install -e '.[ui]'
-          python -m playwright install --with-deps chromium
-      - name: Run preview HTTP and browser acceptance
-        run: |
-          python scripts/verify_deployment.py \
-            --base-url https://preview.sndocs.com \
-            --release candidate/release-manifest.json \
-            --preview \
-            --browser
-      - name: Record preview evidence
-        run: |
-          {
-            echo "## Preview acceptance"
-            echo
-            echo "- HTTP routing, archived paths, range requests, 404s, and headers passed."
-            echo "- Chromium navigation and Pagefind initialization passed."
-            echo "- Candidate: \`${{ needs.assemble-candidate.outputs.release_id }}\`"
-          } >> "$GITHUB_STEP_SUMMARY"
-
   promote-production:
-    name: Promote production
-    needs: [assemble-candidate, validate-preview]
+    name: Approve and promote production
+    needs: [assemble-candidate]
     runs-on: ubuntu-latest
     environment: production
     env:

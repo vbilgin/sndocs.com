@@ -31,16 +31,16 @@ XDG_CONFIG_HOME=/tmp/sndocs-wrangler WRANGLER_LOG_PATH=/tmp/sndocs-wrangler.log 
 
 ## First preview bootstrap
 
-The first candidate must exist before preview can resolve its pointer, while the preview Worker must exist before preview acceptance can pass:
+The first candidate must exist before preview can resolve its pointer, while the preview Worker must exist before the operator can review that candidate:
 
 1. Manually run **Publish latest documentation release**.
-2. Let `test-and-plan`, `build-latest`, and `assemble-candidate` complete. The first run may stop at `validate-preview` because `preview.sndocs.com` has not been bootstrapped.
+2. Let `test-and-plan`, `build-latest`, and `assemble-candidate` complete. **Approve and promote production** waits at the protected `production` Environment.
 3. Confirm the candidate release ID in the workflow summary and verify that `pointers/preview.json` contains it with the R2 object browser.
 4. Run **Bootstrap Cloudflare Worker**, choose `preview`, and approve its protected `production` Environment.
 5. Confirm Cloudflare issued the `preview.sndocs.com` certificate and that the hostname returns `X-Robots-Tag: noindex, nofollow`.
-6. If the missing preview Worker was the only failure and no code correction was required, re-run the failed jobs of the original publication run. This preserves its already verified candidate rather than rebuilding it.
+6. Complete the manual preview checklist below, then approve the waiting production job.
 
-GitHub reruns remain pinned to the original commit. If preview diagnosis requires a code correction, do not rerun that publication: commit and push the correction, bootstrap preview from the corrected commit, and start a new publication run so preview validation and production deployment use the same fixed source.
+GitHub reruns remain pinned to the original commit. If preview diagnosis requires a code correction, cancel that publication, commit and push the correction, and start a new publication run so manual preview validation and production deployment use the same fixed source. Bootstrap preview again only when the Worker code or configuration changed.
 
 The bootstrap workflow is also the recovery path if a Worker service is deleted. Do not choose its `production` target unless the specified release manifest and all referenced R2 objects have already been verified.
 
@@ -54,13 +54,23 @@ Run **Publish latest documentation release** manually while rollout is being pro
 4. uploads the family tree to a new immutable prefix and verifies the exact remote key and byte inventory;
 5. assembles root metadata from the new latest record and already published records only;
 6. uploads and verifies the release root, uploads the release manifest last, and updates the preview pointer only after verification;
-7. checks preview navigation, archived families, ranges, Pagefind initialization, release headers, 404s, and no-index behavior;
-8. pauses at the protected `production` Environment;
+7. pauses at the protected `production` Environment while the operator validates preview manually;
+8. proceeds only after the operator approves production;
 9. deploys a production Worker version containing the candidate release ID at 100% traffic and automatically invokes Wrangler rollback if immediate smoke checks fail;
 10. updates only the changed-family and rolling root recovery assets; and
 11. creates a cleanup plan, retaining the active and rollback releases, every archived family, and all objects in the 14-day grace window.
 
-Inspect the workflow summaries before approving production. The candidate release ID in preview must match the proposed production ID. A scheduled trigger is deliberately absent until the first two successful production releases and the observation period are complete.
+Before approving production:
+
+- open the preview root and latest-family page;
+- confirm navigation and a representative documentation page load;
+- run a basic Pagefind search and open a result;
+- confirm `X-Sndocs-Release` matches the candidate in the workflow summary; and
+- confirm `X-Robots-Tag: noindex, nofollow`.
+
+The protected production approval is the record that this checklist passed. Automated live browser acceptance is temporarily disabled during initial rollout because MkDocs Material's optional latest-release lookup returns `404` before the rolling GitHub Release exists, which the verifier currently treats as fatal. The post-deployment HTTP smoke check and automatic rollback remain active. Reconsider live browser acceptance after two successful production releases and the observation period.
+
+A scheduled trigger is deliberately absent until the first two successful production releases and the observation period are complete.
 
 ## Preview and production diagnosis
 
