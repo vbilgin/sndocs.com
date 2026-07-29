@@ -2,6 +2,7 @@ import json
 import subprocess
 import sys
 from datetime import datetime, timezone
+from importlib import resources
 from pathlib import Path
 
 import pytest
@@ -34,7 +35,6 @@ def test_pagefind_failure_is_reported(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("search", [True, False], ids=["production", "smoke"])
 def test_fixture_builds_with_material_theme(tmp_path, search):
-    root = Path(__file__).parents[1]
     source = tmp_path / "source"
     publication = source / "markdown" / "pub"
     publication.mkdir(parents=True)
@@ -102,7 +102,11 @@ def test_fixture_builds_with_material_theme(tmp_path, search):
     assert loaded["site_name"] == "sndocs — Australia"
     assert loaded["repo_url"] == "https://github.com/vbilgin/sndocs.com"
     assert loaded["repo_name"] == "vbilgin/sndocs.com"
-    assert Path(loaded["theme"]["custom_dir"]).resolve() == root / "src" / "sndocs" / "theme"
+    packaged_theme = Path(str(resources.files("sndocs").joinpath("theme"))).resolve()
+    assert Path(loaded["theme"]["custom_dir"]).resolve() == packaged_theme
+    assert packaged_theme.joinpath("main.html").is_file()
+    assert packaged_theme.joinpath("partials", "header.html").is_file()
+    assert packaged_theme.joinpath("partials", "footer.html").is_file()
     assert "header.autohide" in loaded["theme"]["features"]
     assert "navigation.prune" in loaded["theme"]["features"]
     assert loaded["theme"]["logo"] == "assets/images/branding/logomark-on-light.svg"

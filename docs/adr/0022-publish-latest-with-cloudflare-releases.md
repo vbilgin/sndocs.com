@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-07-28
 - **Decision owner:** Victor Bilgin
-- **Related commit:** Pending (`Implement latest-release Cloudflare deployment` intended subject)
+- **Related commit:** `3411dec` (`Implement latest-release Cloudflare deployment`)
 - **Supersedes:** [ADR-0002](0002-versioned-families-and-archive-retention.md) for scheduled publication selection, [ADR-0005](0005-host-agnostic-release-artifacts.md), and [ADR-0017](0017-remediate-ui-findings-at-source.md) only where it requires every current family in a release build
 
 ## Context

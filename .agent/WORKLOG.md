@@ -4,10 +4,31 @@ Reverse-chronological record of significant project work. This is a historical i
 
 Older entries are archived in [.agent/worklog/2026-H2.md](worklog/2026-H2.md).
 
+## 2026-07-28 — Repair first publication CI gate
+
+- **Work performed by:** Codex, with direction from Victor Bilgin
+- **Commit:** Pending (`Repair first publication CI gate` intended subject)
+
+### Outcome
+
+Corrected the clean-runner assumptions that stopped the first live publication attempt before discovery, and migrated both deployment workflows and Worker tooling to Node 24.
+
+### Changes and decisions
+
+- Made the Material theme fixture validate installed package resources, locked Hatchling and its classifier dependency for the no-isolation wheel test, and installed Chromium before the complete CI test suite.
+- Upgraded the official checkout, Python, Node, upload-artifact, and download-artifact actions to their current Node 24-compatible majors while preserving artifact names, paths, and inputs.
+- Kept the non-editable CI package installation so publication continues to exercise the installed distribution layout.
+
+### Verification
+
+- The four previously failing tests passed; the full suite passed with 154 tests and one environment-specific skip, including Chromium and a separately installed wheel.
+- Eight Worker tests and both Wrangler dry runs passed under Node 24.18.0; workflow parsing, action-version checks, and `git diff --check` passed. A corrected live dispatch awaits commit and push authorization.
+
 ## 2026-07-28 — Implement latest-release Cloudflare deployment
 
 - **Work performed by:** Codex, with direction from Victor Bilgin
-- **Commit:** Pending (`Implement latest-release Cloudflare deployment` intended subject)
+- **Committed by:** Victor Bilgin
+- **Commit:** `3411dec` — `Implement latest-release Cloudflare deployment`
 
 ### Outcome
 
@@ -351,30 +372,3 @@ Added deterministic HTML-aware minification to every production and smoke family
 ### Follow-up
 
 - Retain the original and minified Australia outputs only as local ignored validation artifacts; defer a complete multi-family build until broader integration validation is needed.
-
-## 2026-07-18 — Apply sndocs.com branding to Material
-
-- **Work performed by:** Codex, with direction from Victor Bilgin
-- **Committed by:** Victor Bilgin
-- **Commit:** `829859b` — `Apply sndocs.com branding to Material`
-
-### Outcome
-
-Applied the local sndocs.com visual identity to newly rendered family sites with a tracked logomark and favicon bundle, a Parchment light canvas, and contrast-safe brand colors.
-
-### Changes and decisions
-
-- Copied the supplied OnLight logomark and favicon assets into the tracked Material override tree while retaining `local/branding/` as the ignored editable source.
-- Made favicon and web-manifest references family-relative and host-agnostic, including relative icon paths within the manifest.
-- Assigned Carbon Black to text and the footer, Majorelle Blue to interactive states, Classic Crimson to structural accents, and Pumpkin Spice to warning surfaces.
-- Preserved immutable archived-family output; current families receive the branding when the changed pipeline fingerprint triggers their next build.
-
-### Verification
-
-- Full test suite passed with 59 tests and one filesystem-specific skip; the strict Material fixture passed with production search enabled and smoke search disabled.
-- Confirmed every copied logo and favicon image matches its ignored source byte-for-byte, all family-relative branding requests return successfully, and `git diff --check` passes.
-- Browser inspection at 1440×900 and 390×844 verified the logo proportions, Parchment/Carbon surfaces, Blue interactive states, Crimson metadata and header accents, release selector, responsive layout, footer contrast, and absence of browser console warnings or errors.
-
-### Follow-up
-
-- Add a dark theme only after a complete dark-background asset treatment is available.

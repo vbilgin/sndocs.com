@@ -34,14 +34,14 @@ jobs:
       artifact_id: ${{ steps.plan.outputs.artifact_id }}
       content_prefix: ${{ steps.plan.outputs.content_prefix }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: "22"
+          node-version: "24"
           cache: npm
           cache-dependency-path: worker/package-lock.json
       - name: Install dependencies
@@ -49,6 +49,8 @@ jobs:
           python -m pip install -r requirements.lock
           python -m pip install --no-deps .
           npm ci --prefix worker
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
       - name: Test pipeline and Worker
         run: |
           pytest
@@ -104,7 +106,7 @@ jobs:
             echo
             jq -r '"- Action: `\(.action)`\n- Latest: `\(.latest)`\n- Reason: \(.reason)"' state/deployment-plan.json
           } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: deployment-state
           path: state
@@ -121,8 +123,8 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -207,7 +209,7 @@ jobs:
             jq -r '"- Peak additional disk: `\(.peak_consumed_gib) GiB`\n- Effective safety limit: `\((.limit_bytes / 1073741824 * 1000 | round) / 1000) GiB`\n- Reserved free space: `2 GiB`"' handoff/disk-usage.json
             jq -r '"- Family objects: `\(.object_count)`\n- Family bytes: `\(.total_bytes)`\n- Tree digest: `\(.tree_sha256)`"' handoff/family-inventory.json
           } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: latest-family-handoff
           path: |
@@ -229,19 +231,19 @@ jobs:
     outputs:
       release_id: ${{ steps.assemble.outputs.release_id }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
       - run: |
           python -m pip install -r requirements.lock
           python -m pip install --no-deps .
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: deployment-state
           path: state
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: latest-family-handoff
           path: handoff
@@ -350,7 +352,7 @@ jobs:
             echo
             jq -r '"- Release: `\(.release_id)`\n- Latest: `\(.latest)`\n- Public families: `\(.families | length)`"' candidate/release-manifest.json
           } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: candidate-release
           path: |
@@ -364,12 +366,12 @@ jobs:
     needs: [test-and-plan, assemble-candidate]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: candidate-release
           path: candidate
@@ -403,16 +405,16 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: "22"
+          node-version: "24"
           cache: npm
           cache-dependency-path: worker/package-lock.json
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: candidate-release
           path: candidate
@@ -454,8 +456,8 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           name: candidate-release
           path: candidate
@@ -543,19 +545,19 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
       - run: |
           python -m pip install -r requirements.lock
           python -m pip install --no-deps .
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: deployment-state
           path: state
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: candidate-release
           path: candidate
@@ -607,7 +609,7 @@ jobs:
             jq -r '"- Planned deletions: `\(.delete_count)` objects / `\(.delete_bytes)` bytes\n- Plan digest: `\(.plan_sha256)`"' cleanup-plan.json
             jq -r '"- Resulting storage: `\(.objects)` objects / `\(.bytes)` bytes"' cleanup-storage.json
           } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: cleanup-evidence
           path: |
