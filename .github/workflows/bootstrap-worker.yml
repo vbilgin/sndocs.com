@@ -1,0 +1,58 @@
+name: Bootstrap Cloudflare Worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Worker environment to bootstrap
+        required: true
+        type: choice
+        options:
+          - preview
+          - production
+      release_id:
+        description: Required 64-character release ID for production
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sndocs-cloudflare-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+      - run: npm ci --prefix worker
+      - name: Validate production release input
+        if: inputs.target == 'production'
+        env:
+          RELEASE_ID: ${{ inputs.release_id }}
+        run: |
+          test "$(printf '%s' "$RELEASE_ID" | grep -Ec '^[0-9a-f]{64}$')" -eq 1
+      - name: Bootstrap preview
+        if: inputs.target == 'preview'
+        working-directory: worker
+        run: npx wrangler deploy --env preview --message 'Bootstrap sndocs preview'
+      - name: Bootstrap production
+        if: inputs.target == 'production'
+        working-directory: worker
+        run: |
+          npx wrangler deploy \
+            --env production \
+            --var DEPLOYMENT_MODE:production \
+            --var RELEASE_ID:'${{ inputs.release_id }}' \
+            --message 'Bootstrap sndocs production at ${{ inputs.release_id }}'

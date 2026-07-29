@@ -1,6 +1,6 @@
 # ADR-0005: Publish host-agnostic rolling release artifacts
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0022](0022-publish-latest-with-cloudflare-releases.md)
 - **Date:** 2026-07-16
 - **Decision owner:** Victor Bilgin
 - **Related commit:** `dbc74ff` — `feat: add ServiceNowDocs-to-MkDocs build pipeline`

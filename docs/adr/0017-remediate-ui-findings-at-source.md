@@ -4,6 +4,7 @@
 - **Date:** 2026-07-22
 - **Decision owner:** Victor Bilgin
 - **Related commit:** `c8c71fc` — `Protect UI audits from overlapping output paths`
+- **Supersession note:** [ADR-0022](0022-publish-latest-with-cloudflare-releases.md) replaces only the requirement to publish every current family after a pipeline change; complete families remain the smallest rendering and search unit.
 
 ## Context
 

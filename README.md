@@ -179,14 +179,17 @@ search, while retained archived families remain immutable and may contain their 
 implementation.
 
 Packaging creates `sndocs-site.tar.gz`, `sndocs-site.zip`, and a SHA-256 file for each archive.
-The scheduled GitHub Actions workflow refreshes a rolling `site-artifact` GitHub Release only
-when upstream SHAs or pipeline inputs change. It can also be run manually and forced to rebuild.
+The public packaging command and default full-current-family build remain available, but Cloudflare
+publication follows the [latest-with-archives deployment policy](docs/deployment-runbook.md). It
+builds only current latest, stores immutable family and release objects in private R2, serves them
+through a version-pinned Worker, and retains every family that was previously published as latest.
+The rolling `site-artifact` GitHub Release remains a host-agnostic recovery channel.
 
 ## Configuration
 
 Edit `pipeline.toml` to set the site identity, canonical site URL, upstream repository and
-`llms.txt` path, optional family allowlist, and archive basename. The workflow runs daily at
-07:17 UTC by default; change its cron expression in `.github/workflows/build-site.yml`.
+`llms.txt` path, optional family allowlist, and archive basename. Publication remains manual during
+the first two-release rollout; the runbook explains when and how to enable the daily schedule.
 
 ## Licensing
 

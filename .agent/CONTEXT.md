@@ -11,37 +11,38 @@ Build an independent versioned MkDocs mirror of `ServiceNow/ServiceNowDocs`.
 - `pipeline.toml` defines identity, upstream source, family selection, and artifact naming.
 - `discovery.py` parses upstream `llms.txt`, preserves its family/publication ordering, and resolves release-branch SHAs.
 - `source.py` provides remote and reusable-local exact-commit sources without changing branches.
-- `navigation.py` converts publication `index.md` hierarchies into MkDocs navigation and resolves their targets through the shared family link resolver.
-- `transform.py` recovers malformed frontmatter, enriches pages, rewrites links, converts recognized navigation tables into responsive cards, renders omitted-image notices, and creates placeholders.
-- Raw HTML tables receive deterministic recovery for embedded Markdown, nesting, malformed fences, and recognized card variants; unfamiliar structures remain unchanged.
+- `navigation.py` converts publication indexes into MkDocs navigation; `transform.py` deterministically recovers known malformed source structures, enriches pages, rewrites links, renders cards/notices, and creates placeholders.
 - `links.py` repairs stale same-family links using exact paths, unique basenames, publication context, self-canonical metadata, and reviewed overrides; unresolved ambiguity is fatal.
 - `builder.py` builds and fingerprints families, creates family-scoped Pagefind indexes, selects deterministic preview samples, reuses production output, retains archives, and assembles manifests.
 - `artifacts.py` validates the assembled site and creates ZIP/TAR archives with SHA-256 checksums.
+- `deployment.py` plans latest-only releases, validates inventories, assembles archived metadata without family downloads, creates sharded recovery archives, and guards R2 cleanup.
+- `worker/` contains the tested Cloudflare Worker and preview/production Wrangler environments bound privately to `sndocs-production`.
 - `quality.py` validates packaged rules; `ui_audit.py` applies them through structural and sampled Chromium checks.
-- `.github/workflows/build-site.yml` runs scheduled or manual builds and publishes the rolling `site-artifact` GitHub Release when inputs change.
+- `.github/workflows/build-site.yml` manually builds current latest, verifies immutable R2 releases through preview, pauses for protected production promotion, publishes recovery assets, and applies guarded cleanup. Scheduling remains disabled during rollout.
 
 The `sndocs` 0.2 CLI manages the pipeline; optional `audit-ui` and `quality` commands expose report-only audits and human-readable rules.
 
 ## Important invariants and decisions
 
 - Upstream `llms.txt` is authoritative for current families and publication ordering.
-- Every current family is published under `/<family>/`; the root redirects to the newest.
-- Deleted upstream families remain available as immutable archived snapshots.
-- Publication indexes define navigation, but all Markdown files are rendered so inbound links remain valid; expected omitted-navigation listings are suppressed without weakening strict validation.
+- Scheduled publication builds only current latest; every family previously published as latest remains under `/<family>/` as an immutable archive. Never-published upstream families remain absent.
+- The public `sndocs build` default still builds every selected current family; deployment automation alone uses the latest-with-archives policy.
+- Publication indexes define navigation, but all family Markdown is rendered; expected omitted-navigation listings are suppressed without weakening strict validation.
 - Same-family moved links are repaired only through deterministic paths, canonical metadata, or reviewed overrides.
-- Navigation and page titles shed Markdown escapes; navigation retains the first resolved destination because Material canonicalizes duplicate destinations.
-- Missing upstream targets receive clearly marked diagnostic placeholder pages.
+- Navigation retains its first resolved destination; missing targets receive diagnostic placeholders.
 - Cross-family moved-link resolution is intentionally not attempted.
 - MkDocs strict mode remains enabled; ambiguity and pipeline-created broken links fail.
 - Production builds include a static Pagefind full-text index in every selected current family; smoke manifests are distinct and omit search; sampled preview manifests include search and coverage metadata. Neither diagnostic profile can be packaged.
-- `sndocs preview` transforms every source-area index plus up to two deterministic topics per area, validates the assembled result, and serves it on an available local port; it is a sanity check rather than complete-family validation.
+- `sndocs preview` builds a deterministic strict sample with search; it is a sanity check rather than complete-family validation.
 - Generated UI uses the `sndocs` brand and links to `vbilgin/sndocs.com`; ServiceNowDocs remains the content source.
 - Existing output requires explicit `--clean` replacement; dry runs never write or delete files.
-- Automatic workspaces below the invocation directory's `.temp/` are config-independent and cleaned automatically; explicit `--work-dir` content is preserved.
+- Automatic workspaces are cleaned; explicit `--work-dir` content is preserved.
 - Source prose receives light enrichment rather than editorial restructuring; intentionally omitted upstream media is not restored.
 - Generated Markdown and HTML stay out of the main branch.
+- Public family URLs resolve through a versioned Worker release binding and private R2 objects. Preview alone uses a mutable candidate pointer; production never does.
+- Active and rollback releases, all archived-family artifacts, and a 14-day grace window are cleanup invariants.
 - Topics use host-agnostic directory URLs (`/topic/` backed by `topic/index.html`); preview them over HTTP.
-- Mirrored content retains required trademark, UTC build-year copyright, and Apache-2.0 notices plus an independent-site disclaimer and upstream link.
+- Mirrored content retains required legal notices, independent-site disclaimer, and upstream link.
 
 ## Artifact contract
 
@@ -55,26 +56,20 @@ The assembled site contains:
 - schema-version-2 `link-report.json` with typed document/navigation repairs, missing-document placeholders, and omitted-image occurrences; and
 - `SERVICENOW-LICENSE.txt`.
 
-Packaging produces `sndocs-site.tar.gz`, `sndocs-site.zip`, and SHA-256 files for both.
+Public packaging still produces `sndocs-site.tar.gz`, `sndocs-site.zip`, and SHA-256 files for both. Cloudflare publication additionally uses per-family inventories and archives, small canonical release manifests, root archives, and deterministic numbered parts above 1.9 GiB.
 
 ## Current status
 
-- Production navigation prunes inactive branches, and local source archives stream during extraction.
 - Current families use Pagefind's query-loaded chunks; the targeted Australia build indexed 49,089 pages into 124.9 MiB in 53.0 seconds, replacing a 222.0 MiB legacy index.
 - The deterministic Australia preview sample selects 159 of 48,989 Markdown files across all 55 top-level source areas while retaining strict rendering and Pagefind.
-- Australia SHA `0dfa6b2` passed the final strict diagnostic render in 243.74 seconds with only 20 known informational stale-anchor messages.
 - Production and smoke builds minify HTML while leaving inline JavaScript and CSS untouched; Australia output shrank by 46.4% in validation.
-- Every family receives a Material landing page, and artifact validation rejects missing family roots or unrewritten current-family raw Markdown links.
-- Recognized upstream `nav-card` tables render as accessible adaptive card grids with clean directory links and descriptions recovered from omitted-icon alt text.
-- UI remediation covers table Markdown, fences, card variants, title and navigation normalization, responsive containment, and detector precision.
-- The UI audit groups evidence under 10 semantic rules with documented triage and rebuild workflows; report paths cannot overlap the read-only input site.
-- The retained Australia audit scanned 49,089 pages, rendered 143 at both viewports, recorded 9 findings without errors, and remains diagnostic.
+- Artifact validation rejects missing roots, invalid search output, or unrewritten current-family source links. UI audits remain report-only.
+- Latest-only release planning, root assembly, sharded recovery, retention cleanup, Worker routing/cache/header behavior, and both Wrangler environment configurations are implemented and locally tested.
 
 ## Known gaps and risks
 
-- GitHub Actions publication to the rolling Release has not yet been proven in production.
+- Cloudflare publication, custom-domain certificates, production rollback, GitHub recovery reconstruction, and cost behavior have not yet been proven in the live accounts.
 - Full families remain large; Australia has roughly 49,000 pages and generates 4.03 GiB.
-- Navigation usability still needs browser evaluation against a successful complete site.
 - Australia contains 20 stale-anchor diagnostics at MkDocs' informational level; anchor validation intentionally remains informational.
 - Cross-family links can still become stale when equivalent topics move between directories in different release branches.
 - Pagefind has passed a targeted Australia production-family build and browser check, but a complete all-current-family production build and package assembly remain deferred.
@@ -82,7 +77,7 @@ Packaging produces `sndocs-site.tar.gz`, `sndocs-site.zip`, and SHA-256 files fo
 ## Next likely work
 
 1. Review the retained Australia diagnostic site and UI report; scope any follow-up findings independently rather than treating zero findings as an implicit gate.
-2. Rebuild every current family through the normal production fingerprint flow and measure Pagefind artifact and query performance.
-3. Verify rolling Release reuse and publication.
+2. Execute the deployment runbook: create the first candidate, bootstrap preview, promote, test rollback, re-promote, and observe for 48 hours.
+3. Prove GitHub recovery reconstruction, complete two successful releases, then enable the daily schedule, guarded cleanup, and HSTS.
 
 Use the README virtual-environment workflow and `upstream.families` for local restrictions. Repository state remains authoritative.

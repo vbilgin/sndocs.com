@@ -1,6 +1,6 @@
 # ADR-0002: Publish versioned release families and retain archives
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0022](0022-publish-latest-with-cloudflare-releases.md) for scheduled publication selection; its stable family URL and archive-retention requirements continue there
 - **Date:** 2026-07-16
 - **Decision owner:** Victor Bilgin
 - **Related commit:** `dbc74ff` — `feat: add ServiceNowDocs-to-MkDocs build pipeline`

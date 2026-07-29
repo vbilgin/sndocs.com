@@ -4,6 +4,27 @@ Reverse-chronological record of significant project work. This is a historical i
 
 Older entries are archived in [.agent/worklog/2026-H2.md](worklog/2026-H2.md).
 
+## 2026-07-28 — Implement latest-release Cloudflare deployment
+
+- **Work performed by:** Codex, with direction from Victor Bilgin
+- **Commit:** Pending (`Implement latest-release Cloudflare deployment` intended subject)
+
+### Outcome
+
+Implemented a private-R2 and versioned-Worker deployment system that publishes only current latest while retaining every previously published latest family as an immutable public archive.
+
+### Changes and decisions
+
+- Added canonical latest-only planning, family and release inventories, archived-root assembly, exact remote inventory checks, deterministic sharded recovery, and guarded 14-day cleanup without changing the public build CLI.
+- Added one tested Worker with private preview and production R2 bindings, clean URL and family-404 routing, ranges and conditionals, correct MIME data, release-separated caching, preview no-indexing, and report-only CSP.
+- Replaced the monolithic workflow with test/plan, bounded latest build, candidate assembly, browser preview, protected production promotion with rollback, rolling recovery publication, and cleanup jobs; added a protected manual bootstrap workflow and intentionally left scheduling disabled.
+- Added the operational runbook and ADR-0022, superseding the all-current scheduled publication and monolithic rolling-artifact deployment policies while retaining local full builds and the existing monolith during recovery proof.
+
+### Verification
+
+- The full Python suite passed with 154 tests and one environment-specific skip; Worker request tests and Wrangler dry runs passed for both environments.
+- Python compilation, workflow YAML parsing, documentation/link structure checks, and whitespace checks passed. A real multi-gigabyte family build and live Cloudflare rollout remain post-implementation operations.
+
 ## 2026-07-28 — Add fast sampled preview command
 
 - **Work performed by:** Codex, with direction from Victor Bilgin
@@ -357,28 +378,3 @@ Applied the local sndocs.com visual identity to newly rendered family sites with
 ### Follow-up
 
 - Add a dark theme only after a complete dark-background asset treatment is available.
-
-## 2026-07-18 — Preserve clean URLs and add local preview
-
-- **Work performed by:** Codex, with direction from Victor Bilgin
-- **Committed by:** Victor Bilgin
-- **Commit:** `683e6fd` — `Add clean URL preview server`
-
-### Outcome
-
-Made the clean directory-URL contract explicit and added a supported local HTTP preview workflow so generated navigation resolves topic index pages without exposing `index.html` in URLs.
-
-### Changes and decisions
-
-- Explicitly enabled MkDocs directory URLs and retained `/topic/` as the host-agnostic public URL form.
-- Added `sndocs serve` with site, bind-address, and port options, missing-directory diagnostics, and graceful interruption handling using only the Python standard library.
-- Documented why `file://` browsing cannot resolve directory indexes and recorded the CLI and URL policy in ADR-0012.
-
-### Verification
-
-- Full test suite passed with 59 tests and one filesystem-specific skip; Python compilation and `git diff --check` also passed.
-- The retained Australia build served successfully through `sndocs serve`; `/australia/better-together/using-ham-for-esg/` returned HTTP 200 and interruption closed the server cleanly.
-
-### Follow-up
-
-- Use the preview command for browser evaluation of the retained Australia production build.

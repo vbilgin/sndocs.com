@@ -1,0 +1,53 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "sndocs-site",
+  "main": "src/index.js",
+  "compatibility_date": "2026-07-28",
+  "workers_dev": false,
+  "send_metrics": false,
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 0.1
+  },
+  "env": {
+    "preview": {
+      "name": "sndocs-preview",
+      "workers_dev": false,
+      "routes": [
+        {
+          "pattern": "preview.sndocs.com",
+          "custom_domain": true
+        }
+      ],
+      "vars": {
+        "DEPLOYMENT_MODE": "preview"
+      },
+      "r2_buckets": [
+        {
+          "binding": "SITE_BUCKET",
+          "bucket_name": "sndocs-production"
+        }
+      ]
+    },
+    "production": {
+      "name": "sndocs-production",
+      "workers_dev": false,
+      "routes": [
+        {
+          "pattern": "sndocs.com",
+          "custom_domain": true
+        }
+      ],
+      "vars": {
+        "DEPLOYMENT_MODE": "production",
+        "RELEASE_ID": "BOOTSTRAP_REQUIRED"
+      },
+      "r2_buckets": [
+        {
+          "binding": "SITE_BUCKET",
+          "bucket_name": "sndocs-production"
+        }
+      ]
+    }
+  }
+}
