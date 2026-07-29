@@ -65,10 +65,11 @@ Public packaging still produces `sndocs-site.tar.gz`, `sndocs-site.zip`, and SHA
 - Production and smoke builds minify HTML while leaving inline JavaScript and CSS untouched; Australia output shrank by 46.4% in validation.
 - Artifact validation rejects missing roots, invalid search output, or unrewritten current-family source links. UI audits remain report-only.
 - Latest-only release planning, root assembly, sharded recovery, retention cleanup, Worker routing/cache/header behavior, and both Wrangler environment configurations are implemented and locally tested.
+- The first live Australia candidate and private preview Worker exist in Cloudflare. Preview acceptance exposed Browser Integrity Check rejecting Python's default user agent and full R2 reads being mislabeled as partial responses; local fixes preserve BIC and correct `200`/`206` semantics, pending bootstrap and a fresh publication.
 
 ## Known gaps and risks
 
-- Cloudflare publication, custom-domain certificates, production rollback, GitHub recovery reconstruction, and cost behavior have not yet been proven in the live accounts.
+- Production publication, apex certificates, rollback, GitHub recovery reconstruction, and cost behavior remain unproven in the live accounts.
 - Full families remain large; Australia has roughly 49,000 pages and generates 4.03 GiB.
 - Australia contains 20 stale-anchor diagnostics at MkDocs' informational level; anchor validation intentionally remains informational.
 - Cross-family links can still become stale when equivalent topics move between directories in different release branches.

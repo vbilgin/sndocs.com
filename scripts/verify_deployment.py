@@ -8,13 +8,21 @@ import urllib.request
 from pathlib import Path
 
 
+USER_AGENT = (
+    "Mozilla/5.0 (compatible; sndocs-deployment-verifier/1.0; "
+    "+https://sndocs.com/)"
+)
+
+
 def request(
     url: str,
     *,
     method: str = "GET",
     headers: dict[str, str] | None = None,
 ) -> tuple[int, dict[str, str], bytes]:
-    call = urllib.request.Request(url, method=method, headers=headers or {})
+    request_headers = {"User-Agent": USER_AGENT}
+    request_headers.update(headers or {})
+    call = urllib.request.Request(url, method=method, headers=request_headers)
     opener = urllib.request.build_opener(
         urllib.request.HTTPHandler(), urllib.request.HTTPSHandler()
     )

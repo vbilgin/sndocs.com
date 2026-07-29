@@ -13,7 +13,7 @@ class MockObject {
     this.size = this._body.length;
     this.httpEtag = etag;
     this.uploaded = new Date("2026-01-01T00:00:00Z");
-    this.range = range;
+    this.range = range ?? { offset: 0, length: this.size };
     this.contentType = contentType;
   }
 
@@ -151,7 +151,10 @@ async function request(path, options = {}, env = environment()) {
 }
 
 test("serves root, latest, archived, and deep clean URLs", async () => {
-  assert.equal(await (await request("/")).text(), "root");
+  const root = await request("/");
+  assert.equal(root.status, 200);
+  assert.equal(root.headers.get("content-range"), null);
+  assert.equal(await root.text(), "root");
   assert.equal(await (await request("/zurich/")).text(), "zurich");
   assert.equal(await (await request("/yokohama/")).text(), "yokohama");
   assert.equal(await (await request("/zurich/guide/")).text(), "guide");

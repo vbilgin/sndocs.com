@@ -38,7 +38,9 @@ The first candidate must exist before preview can resolve its pointer, while the
 3. Confirm the candidate release ID in the workflow summary and verify that `pointers/preview.json` contains it with the R2 object browser.
 4. Run **Bootstrap Cloudflare Worker**, choose `preview`, and approve its protected `production` Environment.
 5. Confirm Cloudflare issued the `preview.sndocs.com` certificate and that the hostname returns `X-Robots-Tag: noindex, nofollow`.
-6. Re-run the failed jobs of the original publication run. This preserves its already verified candidate rather than rebuilding it.
+6. If the missing preview Worker was the only failure and no code correction was required, re-run the failed jobs of the original publication run. This preserves its already verified candidate rather than rebuilding it.
+
+GitHub reruns remain pinned to the original commit. If preview diagnosis requires a code correction, do not rerun that publication: commit and push the correction, bootstrap preview from the corrected commit, and start a new publication run so preview validation and production deployment use the same fixed source.
 
 The bootstrap workflow is also the recovery path if a Worker service is deleted. Do not choose its `production` target unless the specified release manifest and all referenced R2 objects have already been verified.
 
@@ -76,6 +78,8 @@ curl -sS -D - -o /dev/null -H 'Range: bytes=0-31' https://sndocs.com/FAMILY/page
 ```
 
 Expect `206`, `Accept-Ranges: bytes`, an ETag, and a `Content-Range`. If the Worker returns `503`, verify the release binding or preview pointer, fetch `releases/{release_id}.json`, and confirm each family prefix and the release root exist. Do not make an R2 origin public to bypass the Worker.
+
+If acceptance receives `403` before any `X-Sndocs-Release` header, inspect Cloudflare Security Events for the blocking product and Ray ID. Browser Integrity Check may reject default library user agents; the deployment verifier sends a descriptive browser-compatible user agent so BIC can remain enabled.
 
 ## Promotion and rollback
 

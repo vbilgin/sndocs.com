@@ -343,7 +343,7 @@ async function serve(request, env, context, releaseId, manifest, route) {
           releaseId,
         );
       }
-      const status = object.range ? 206 : 200;
+      const status = request.headers.has("Range") && object.range ? 206 : 200;
       const response = new Response(object.body, {
         status,
         headers: objectHeaders(object, route.key, route.root, status),

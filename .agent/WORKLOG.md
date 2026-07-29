@@ -4,6 +4,28 @@ Reverse-chronological record of significant project work. This is a historical i
 
 Older entries are archived in [.agent/worklog/2026-H2.md](worklog/2026-H2.md).
 
+## 2026-07-29 — Repair live preview validation
+
+- **Work performed by:** Codex, with direction from Victor Bilgin
+- **Commit:** Pending (`Repair live preview validation` intended subject)
+
+### Outcome
+
+Diagnosed and corrected both defects exposed by the first live `Validate preview` rerun while preserving Browser Integrity Check and the immutable candidate release.
+
+### Changes and decisions
+
+- Cloudflare Security Events identified Browser Integrity Check blocking the GitHub runner's default `Python-urllib/3.12` request before it reached the Worker; the verifier now sends a descriptive browser-compatible user agent.
+- Live requests then exposed full R2 reads returning `206` because real R2 objects carry range metadata even without a Range request; the Worker now derives partial-response status from the incoming header.
+- Updated mocks and regression tests to model real R2 metadata, retained correct range behavior, and documented that code defects require a corrected bootstrap and fresh publication because GitHub reruns remain pinned to the original commit.
+- Kept BIC enabled and left the accepted release architecture unchanged; no ADR was required.
+
+### Verification
+
+- The full Python suite passed with 156 tests and one environment-specific skip after enabling loopback access for browser/UI tests.
+- All eight Worker tests and both preview and production Wrangler dry runs passed.
+- Live deployment verification remains pending commit, push, corrected preview bootstrap, and a fresh publication run.
+
 ## 2026-07-29 — Repair deterministic family-inventory ordering
 
 - **Work performed by:** Codex, with direction from Victor Bilgin
@@ -364,31 +386,3 @@ Added ServiceNow's required trademark and build-year copyright notices to the RE
 
 - Full test suite passed with 59 tests and one filesystem-specific skip; `git diff --check` passed.
 - The strict Material fixture rendered and verified the exact notices, UTC build year, preserved disclaimer, Apache-2.0 wording, and ServiceNowDocs repository link in both production and smoke configurations.
-
-## 2026-07-18 — Minify generated family HTML
-
-- **Work performed by:** Codex, with direction from Victor Bilgin
-- **Committed by:** Victor Bilgin
-- **Commit:** `cf43b61` — `Minify generated family HTML`
-
-### Outcome
-
-Added deterministic HTML-aware minification to every production and smoke family build, materially reducing the generated site and packaged artifacts without changing the host-agnostic directory-URL contract.
-
-### Changes and decisions
-
-- Added and locked `mkdocs-minify-html-plugin` 0.3.11, declared its Python 3.11 `typing-extensions` compatibility requirement, enabled it after the optional search plugin, and explicitly disabled inline CSS and JavaScript minification.
-- Added fixture coverage for plugin configuration, minified output, whitespace-sensitive code and textarea content, inline JavaScript preservation, and the existing clean-URL, branding, search, placeholder, and navigation behavior.
-- Kept the minifier dependency in `pyproject.toml`, so the existing pipeline fingerprint invalidates prior unminified family reuse automatically.
-
-### Verification
-
-- Full test suite passed with 59 tests and one filesystem-specific skip; `git diff --check` passed.
-- A strict Australia production rebuild at upstream SHA `71f4936` completed successfully: rendering took 253 seconds, all normalization counts matched the prior build, and artifact validation passed.
-- Minification reduced Australia HTML from 4,077,612,994 to 2,065,897,587 bytes (49.3%) and the complete site from 4,333,444,164 to 2,321,729,890 bytes (46.4%); the representative page fell from 55,292 to 31,607 bytes.
-- Packaging completed in 58.8 seconds; TAR.GZ fell from 433,174,392 to 350,614,880 bytes (19.1%) and ZIP fell from 476,180,101 to 401,874,869 bytes (15.6%).
-- Browser validation confirmed the representative clean URL, title, heading, branding, release selector, search, canonical URL, adjacent-topic navigation, and all requested assets without console warnings or errors.
-
-### Follow-up
-
-- Retain the original and minified Australia outputs only as local ignored validation artifacts; defer a complete multi-family build until broader integration validation is needed.
