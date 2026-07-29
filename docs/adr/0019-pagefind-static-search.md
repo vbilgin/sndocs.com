@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-07-28
 - **Decision owner:** Victor Bilgin
-- **Related commit:** Pending
+- **Related commit:** `b41ea68` — `Replace monolithic search with Pagefind`
 - **Supersedes:** The built-in-search portion of [ADR-0003](0003-mkdocs-material-content-processing.md)
 
 ## Context

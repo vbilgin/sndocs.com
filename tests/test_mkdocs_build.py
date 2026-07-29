@@ -57,7 +57,18 @@ def test_fixture_builds_with_material_theme(tmp_path, search):
         "</td></tr></tbody></table>\n",
         encoding="utf-8",
     )
-    settings = Settings(tmp_path / "nested" / "custom.toml", "sndocs.com", "https://sndocs.com", "Mirror", "ServiceNow/ServiceNowDocs", "llms.txt", (), "sndocs-site")
+    settings = Settings(
+        tmp_path / "nested" / "custom.toml",
+        "sndocs",
+        "https://sndocs.com",
+        "Mirror",
+        "ServiceNow/ServiceNowDocs",
+        "llms.txt",
+        (),
+        "sndocs-site",
+        "https://github.com/vbilgin/sndocs.com",
+        "vbilgin/sndocs.com",
+    )
     discovery = Discovery(["australia"], "australia", [Publication("Publication", "pub", "url")], {"australia": "abc"})
     work = tmp_path / "work"
     docs = work / "docs"
@@ -88,10 +99,15 @@ def test_fixture_builds_with_material_theme(tmp_path, search):
         nav=nav,
     )
     loaded = yaml.safe_load(config.read_text(encoding="utf-8"))
+    assert loaded["site_name"] == "sndocs — Australia"
+    assert loaded["repo_url"] == "https://github.com/vbilgin/sndocs.com"
+    assert loaded["repo_name"] == "vbilgin/sndocs.com"
     assert Path(loaded["theme"]["custom_dir"]).resolve() == root / "src" / "sndocs" / "theme"
+    assert "header.autohide" in loaded["theme"]["features"]
     assert "navigation.prune" in loaded["theme"]["features"]
     assert loaded["theme"]["logo"] == "assets/images/branding/logomark-on-light.svg"
     assert loaded["theme"]["favicon"] == "assets/images/branding/favicon.svg"
+    assert loaded["theme"]["icon"]["repo"] == "fontawesome/brands/github"
     assert loaded["theme"]["palette"] == [{"scheme": "default"}]
     assert loaded["use_directory_urls"] is True
     assert loaded["validation"] == {"nav": {"omitted_files": "ignore"}}
@@ -117,6 +133,11 @@ def test_fixture_builds_with_material_theme(tmp_path, search):
     assert "first line\n    indented line" in rendered
     assert "<script>window.fixtureValue = 1 + 2;</script>" in rendered
     assert "logomark-on-light.svg" in rendered
+    assert "sndocs — Australia" in rendered
+    assert "sndocs is an independent community mirror" in rendered
+    assert "sndocs.com is an independent community mirror" not in rendered
+    assert rendered.count("href=https://github.com/vbilgin/sndocs.com") == 2
+    assert rendered.count("md-source__repository>vbilgin/sndocs.com</div>") == 2
     assert "favicon.svg" in rendered
     assert "favicon-96x96.png" in rendered
     assert "favicon.ico" in rendered
@@ -171,6 +192,8 @@ def test_fixture_builds_with_material_theme(tmp_path, search):
     }
     assert {path.name for path in branding.iterdir()} == expected_assets
     webmanifest = json.loads((branding / "site.webmanifest").read_text(encoding="utf-8"))
+    assert webmanifest["name"] == "sndocs"
+    assert webmanifest["short_name"] == "sndocs"
     assert [icon["src"] for icon in webmanifest["icons"]] == [
         "web-app-manifest-192x192.png",
         "web-app-manifest-512x512.png",

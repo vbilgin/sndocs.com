@@ -196,6 +196,7 @@ def write_mkdocs_config(
 ) -> Path:
     build_year = datetime.now(timezone.utc).year
     features = [
+        "header.autohide",
         "navigation.indexes",
         "navigation.prune",
         "navigation.top",
@@ -206,6 +207,8 @@ def write_mkdocs_config(
         "site_name": f"{settings.site_name} — {family.title()}",
         "site_description": settings.site_description,
         "site_url": f"{settings.site_url}/{family}/" if settings.site_url else "",
+        "repo_url": settings.repo_url,
+        "repo_name": settings.repo_name,
         "use_directory_urls": True,
         "docs_dir": str(work / "docs"),
         "site_dir": str(site_dir or work / "site"),
@@ -215,6 +218,7 @@ def write_mkdocs_config(
             "features": features,
             "logo": "assets/images/branding/logomark-on-light.svg",
             "favicon": "assets/images/branding/favicon.svg",
+            "icon": {"repo": "fontawesome/brands/github"},
             "palette": [{"scheme": "default"}],
         },
         "plugins": [{"minify_html": {"minify_css": False, "minify_js": False}}],
@@ -222,6 +226,7 @@ def write_mkdocs_config(
         "extra_css": ["assets/stylesheets/extra.css"],
         "extra_javascript": ["assets/javascripts/versions.js"],
         "extra": {
+            "brand_name": settings.site_name,
             "servicenow_copyright_year": build_year,
             "pagefind_search": search,
             "pagefind_cache_tag": search_cache_tag or "",
@@ -517,7 +522,8 @@ def build_site(
     )
     (output / "index.html").write_text(
         f'<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=./{discovery.latest}/">'
-        f'<link rel="canonical" href="./{discovery.latest}/"><title>sndocs.com</title>', encoding="utf-8"
+        f'<link rel="canonical" href="./{discovery.latest}/"><title>{settings.site_name}</title>',
+        encoding="utf-8",
     )
     upstream_license = """              Copyright 2026 ServiceNow
 

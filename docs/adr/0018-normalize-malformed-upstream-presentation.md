@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-07-22
 - **Decision owner:** Victor Bilgin
-- **Related commit:** `Normalize malformed upstream presentation` (intended subject)
+- **Related commit:** `4ac9816` — `Normalize malformed upstream presentation`
 
 ## Context
 

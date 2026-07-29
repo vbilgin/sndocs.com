@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-07-22
 - **Decision owner:** Victor Bilgin
-- **Related commit:** `Protect UI audits from overlapping output paths` (intended subject)
+- **Related commit:** `c8c71fc` — `Protect UI audits from overlapping output paths`
 
 ## Context
 

@@ -9,13 +9,15 @@ from sndocs.models import Discovery, Settings
 def settings_for(root):
     return Settings(
         config_path=root / "pipeline.toml",
-        site_name="sndocs.com",
+        site_name="sndocs",
         site_url="https://sndocs.com",
         site_description="Mirror",
         repository="owner/repo",
         llms_path="llms.txt",
         family_allowlist=(),
         archive_basename="sndocs-site",
+        repo_url="https://github.com/vbilgin/sndocs.com",
+        repo_name="vbilgin/sndocs.com",
     )
 
 
@@ -49,6 +51,7 @@ def test_fresh_build_writes_report_and_manifest_counts(tmp_path, monkeypatch):
     assert changed is True
     assert manifest["families"]["australia"]["link_counts"] == counts
     assert written_report["families"]["australia"] == report
+    assert "<title>sndocs</title>" in (output / "index.html").read_text(encoding="utf-8")
 
 
 def test_incremental_build_reuses_previous_report(tmp_path, monkeypatch):

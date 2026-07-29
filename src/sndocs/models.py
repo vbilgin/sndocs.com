@@ -38,3 +38,5 @@ class Settings:
     llms_path: str
     family_allowlist: tuple[str, ...]
     archive_basename: str
+    repo_url: str = ""
+    repo_name: str = ""

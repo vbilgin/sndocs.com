@@ -4,10 +4,35 @@ Reverse-chronological record of significant project work. This is a historical i
 
 Older entries are archived in [.agent/worklog/2026-H2.md](worklog/2026-H2.md).
 
+## 2026-07-28 — Update site header and branding
+
+- **Work performed by:** Codex, with direction from Victor Bilgin
+- **Commit:** Pending (`Update site header and branding` intended subject)
+
+### Outcome
+
+Updated generated family sites to use the `sndocs` UI brand, automatically hide the Material header while scrolling, and link to the `vbilgin/sndocs.com` project repository from desktop and mobile navigation.
+
+### Changes and decisions
+
+- Added independent site-repository URL and name settings without changing the `ServiceNow/ServiceNowDocs` upstream source contract.
+- Enabled Material's `header.autohide` feature and emitted the configured repository metadata with the bundled GitHub icon for every production and smoke family build.
+- Renamed the generated family title base, footer disclaimer, root redirect title, and web-app manifest while retaining the `sndocs.com` public domain and repository-facing project labels.
+- Added configuration and strict rendered-fixture coverage for the new identity, repository link placements, and both search profiles.
+- Recorded the UI-brand boundary, independent site-repository identity, and standard Material header behavior in ADR-0020.
+- Compacted current context, archived the two oldest active worklog entries, restored archive ordering, and reconciled committed metadata for ADRs 0017–0019.
+
+### Verification
+
+- Targeted configuration, Material fixture, and build-reporting tests passed with 11 tests.
+- The full suite passed with 136 tests and one environment-specific skip; `git diff --check` passed.
+- ADR index coverage, local Markdown links, context/worklog size limits, and recorded commit SHAs were verified.
+
 ## 2026-07-28 — Replace monolithic Material search with Pagefind
 
 - **Work performed by:** Codex, with direction from Victor Bilgin
-- **Commit:** `Replace monolithic search with Pagefind` (intended subject)
+- **Committed by:** Victor Bilgin
+- **Commit:** `b41ea68` — `Replace monolithic search with Pagefind`
 
 ### Outcome
 
@@ -31,7 +56,7 @@ Replaced the unusable 222 MiB Australia Material/Lunr search index with family-s
 
 - **Work performed by:** Codex, with direction from Victor Bilgin
 - **Committed by:** Victor Bilgin
-- **Commit:** `Normalize malformed upstream presentation` (intended subject)
+- **Commit:** `4ac9816` — `Normalize malformed upstream presentation`
 
 ### Outcome
 
@@ -55,7 +80,8 @@ Added deterministic source-layer recovery for the malformed upstream presentatio
 ## 2026-07-22 — Reconcile ADR and agent records
 
 - **Work performed by:** Codex, with direction from Victor Bilgin
-- **Commit:** `Protect UI audits from overlapping output paths` (intended subject)
+- **Committed by:** Victor Bilgin
+- **Commit:** `c8c71fc` — `Protect UI audits from overlapping output paths`
 
 ### Outcome
 
@@ -75,7 +101,8 @@ Reconciled the complete ADR catalog and layered agent records with repository hi
 ## 2026-07-22 — Define and enforce UI finding remediation
 
 - **Work performed by:** Codex, with direction from Victor Bilgin
-- **Commit:** `Protect UI audits from overlapping output paths` (intended subject)
+- **Committed by:** Victor Bilgin
+- **Commit:** `c8c71fc` — `Protect UI audits from overlapping output paths`
 
 ### Outcome
 
@@ -332,62 +359,3 @@ Made the clean directory-URL contract explicit and added a supported local HTTP 
 ### Follow-up
 
 - Use the preview command for browser evaluation of the retained Australia production build.
-
-## 2026-07-17 — Normalize upstream strict-validation defects
-
-- **Work performed by:** Codex, with direction from Victor Bilgin
-- **Committed by:** Victor Bilgin
-- **Commit:** `20bc107` — `Normalize upstream validation defects`
-
-### Outcome
-
-Made the Australia source snapshot pass strict MkDocs rendering and artifact validation without suppressing warnings or fabricating missing content or media.
-
-### Changes and decisions
-
-- Shared the deterministic family resolver between document links and publication navigation, retained fatal ambiguity, and finalized placeholders after both reference passes.
-- Converted 6 conventional references to 3 absent PNG targets into accessible omitted-image notices while leaving Markdown-looking text inside raw HTML containers unchanged.
-- Published typed document, navigation, placeholder, and omitted-image audit data in `link-report.json` schema version 2 and converted retained schema-version-1 archived reports during assembly.
-- Added a generated Material landing page for each family, tightened raw-link rewriting when an upstream URL is both link label and destination, and strengthened artifact schema and raw-link validation.
-- Recorded the policy in ADR-0011 and kept stale-anchor validation at MkDocs' informational default.
-
-### Verification
-
-- Full test suite, Python compilation, and `git diff --check` passed.
-- A render-free Australia audit at `71f4936517ebd1fbaf76c5515c40b8d12bc6dd5c` reported zero warnings and zero unrewritten current-family raw links; 20 stale anchors remained informational.
-- A strict Australia production build with search completed and passed artifact validation in 310.5 seconds. It produced 220,021 exact, 15,207 repaired, and 271 missing document-link occurrences; 58,280 exact, 488 repaired, and 67 missing navigation occurrences; 98 placeholders; and 6 omitted images across 3 targets.
-- The validated Australia family tree measured 4,327,910,259 bytes (4.03 GiB), including 238,443,879 bytes (227.4 MiB) of search data; the temporary tree was removed after measurement.
-- Victor independently validated the retained Australia production build and packaged artifacts locally; `site-australia/` and `artifacts-australia/` are ignored for continued local inspection.
-
-### Follow-up
-
-- Evaluate the successful Australia site in a browser before attempting and packaging the complete four-family build.
-
-## 2026-07-17 — Bound build storage and add a smoke profile
-
-- **Work performed by:** Codex, with direction from Victor Bilgin
-- **Committed by:** Victor Bilgin
-- **Commit:** `3198cfa` — `Optimize build storage and add smoke mode`
-
-### Outcome
-
-Reworked family build staging so temporary storage no longer accumulates source, transformed Markdown, and duplicate generated sites across all release families; added an explicit strict smoke profile for quick local testing.
-
-### Changes and decisions
-
-- Moved automatic workspaces under ignored `.temp/`, cleaned each completed family workspace, preserved explicit diagnostic work directories, and printed phase timing, size, reuse, and cleanup progress.
-- Enabled Material navigation pruning, rendered MkDocs directly into final family outputs, and reused unchanged family trees with hard links plus a portable copy fallback.
-- Streamed local `git archive` extraction instead of buffering the complete archive in memory.
-- Added `build --smoke` for newest-family strict builds without search, recorded the profile in manifests, isolated incremental reuse by profile, and rejected smoke packaging.
-- Recorded the workspace lifecycle and smoke artifact contract in ADR-0010.
-
-### Verification
-
-- Full test suite: 52 passed, 1 filesystem-specific skip; strict fixture builds passed with production search enabled and smoke search disabled.
-- CLI help inspection, Python compilation, and `git diff --check` passed.
-- An Australia production attempt measured 7.6 seconds and 256.6 MiB for source materialization, 61.1 seconds and 259.2 MiB for transformation, a 698 MiB peak automatic workspace on disk, 4.1 GiB of generated output, and a 227 MiB search directory.
-- The measured build correctly removed its automatic workspace but MkDocs strict mode rejected 494 pre-existing upstream warnings: 488 stale navigation references and 6 missing-image references. Stale anchors were separate informational diagnostics, so no complete artifact or four-family build was attempted; the invalid 4.1 GiB measurement output was removed afterward.
-
-### Follow-up
-
-- Resolve or deterministically represent the Australia strict warnings before treating the 4.1 GiB generated tree as a valid artifact or attempting the complete multi-family build.

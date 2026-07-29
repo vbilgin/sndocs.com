@@ -13,11 +13,13 @@ def load_settings(path: Path) -> Settings:
     build = data.get("build", {})
     return Settings(
         config_path=path.resolve(),
-        site_name=site.get("name", "sndocs.com"),
+        site_name=site.get("name", "sndocs"),
         site_url=site.get("url", "").rstrip("/"),
         site_description=site.get("description", ""),
         repository=upstream.get("repository", "ServiceNow/ServiceNowDocs"),
         llms_path=upstream.get("llms_path", "llms.txt"),
         family_allowlist=tuple(upstream.get("families", [])),
         archive_basename=build.get("archive_basename", "sndocs-site"),
+        repo_url=site.get("repo_url", ""),
+        repo_name=site.get("repo_name", ""),
     )

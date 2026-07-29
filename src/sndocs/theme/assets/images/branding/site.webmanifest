@@ -1,6 +1,6 @@
 {
-  "name": "sndocs.com",
-  "short_name": "SN Docs",
+  "name": "sndocs",
+  "short_name": "sndocs",
   "icons": [
     {
       "src": "web-app-manifest-192x192.png",
