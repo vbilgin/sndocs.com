@@ -91,10 +91,11 @@ def test_pagefind_modal_searches_body_content_from_family_and_nested_pages(tmp_p
                 ("/australia/nested/page/", "Meta+k" if platform.system() == "Darwin" else "Control+k"),
             ):
                 page.goto(origin + path)
+                trigger = page.get_by_role("button", name="Search")
                 if shortcut:
                     page.keyboard.press(shortcut)
                 else:
-                    page.get_by_role("button", name="Search").click()
+                    trigger.click()
                 query = page.locator("pagefind-modal input")
                 query.fill("quasarorchid")
                 page.wait_for_timeout(1000)
@@ -111,10 +112,12 @@ def test_pagefind_modal_searches_body_content_from_family_and_nested_pages(tmp_p
                 )
                 page.keyboard.press("Escape")
                 sync_api.expect(query).not_to_be_visible()
+                sync_api.expect(trigger).to_have_attribute("aria-expanded", "false")
                 if shortcut:
                     page.keyboard.press(shortcut)
                 else:
-                    page.get_by_role("button", name="Search").click()
+                    trigger.click()
+                sync_api.expect(query).to_be_visible()
                 query.fill("quasarorchid")
                 result.first.wait_for(state="visible", timeout=10000)
                 result.first.click()
