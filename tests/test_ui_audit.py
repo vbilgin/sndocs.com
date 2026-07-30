@@ -3,14 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from sndocs import ui_audit
-from sndocs.ui_audit import (
-    FindingStore,
-    StaticAudit,
-    audit_site_ui,
-    select_pages,
-    structural_audit,
-)
+from sndocs.ui_audit import FindingStore, StaticAudit, audit_site_ui, structural_audit
 from sndocs.quality import load_quality_ruleset
 
 
@@ -46,7 +39,6 @@ def test_structural_audit_detects_and_deduplicates_problem_patterns(tmp_path):
     by_rule = {item["rule_id"]: item for item in findings.findings()}
 
     assert len(result.pages) == 3
-    assert len(result.high_risk_pages) == 1
     assert by_rule["SND-RENDER-001"]["affected_page_count"] == 2
     render_detectors = {
         item["detector_id"] for item in by_rule["SND-RENDER-001"]["observations"]
@@ -72,25 +64,7 @@ def test_structural_audit_ignores_markdown_syntax_in_code_examples(tmp_path):
     assert all(item["rule_id"] != "SND-RENDER-001" for item in findings.findings())
 
 
-def test_sampling_is_deterministic_and_keeps_high_risk_pages():
-    audit = StaticAudit(
-        pages=[f"/{number}/" for number in range(10)],
-        high_risk_pages={"/9/"},
-        table_pages=set(),
-        nav_pages=set(),
-    )
-
-    first = select_pages(audit, 3, 42)
-    second = select_pages(audit, 3, 42)
-
-    assert first == second
-    assert "/9/" in first
-    assert len(first) == 4
-    with pytest.raises(ValueError, match="cannot be negative"):
-        select_pages(audit, -1, 0)
-
-
-def test_audit_is_read_only_and_rejects_overlapping_report_paths(tmp_path, monkeypatch):
+def test_audit_is_read_only_and_rejects_overlapping_report_paths(tmp_path):
     site = _site(tmp_path)
     (site / "index.html").write_text("<p>unchanged</p>", encoding="utf-8")
     before = {
@@ -98,9 +72,8 @@ def test_audit_is_read_only_and_rejects_overlapping_report_paths(tmp_path, monke
         for path in site.rglob("*")
         if path.is_file()
     }
-    monkeypatch.setattr(ui_audit, "browser_audit", lambda *_args: 0)
 
-    report = audit_site_ui(site, tmp_path / "report", sample_size=0)
+    report = audit_site_ui(site, tmp_path / "report")
 
     after = {
         path.relative_to(site): path.read_bytes()
@@ -111,7 +84,7 @@ def test_audit_is_read_only_and_rejects_overlapping_report_paths(tmp_path, monke
     assert after == before
     for output in (site, site / "report", tmp_path):
         with pytest.raises(ValueError, match="must not overlap"):
-            audit_site_ui(site, output, sample_size=0)
+            audit_site_ui(site, output)
     assert after == {
         path.relative_to(site): path.read_bytes()
         for path in site.rglob("*")
@@ -119,27 +92,22 @@ def test_audit_is_read_only_and_rejects_overlapping_report_paths(tmp_path, monke
     }
 
 
-def test_browser_audit_writes_report_and_remains_report_only(tmp_path):
-    pytest.importorskip("playwright")
+def test_audit_site_ui_writes_the_static_only_report(tmp_path):
     site = _site(tmp_path)
     (site / "index.html").write_text(
-        """<!doctype html><style>
-        .wide { width: 900px }
-        .intentional-nav-overflow { width: 100px; overflow: hidden }
-        .intentional-nav-overflow ul { width: 500px }
-        </style><nav><ul>
+        """<!doctype html><nav><ul>
         <li><a href="/">Duplicate</a></li><li><a href="/">Duplicate</a></li>
         </ul></nav>
-        <nav class="intentional-nav-overflow"><ul><li>Sliding Material navigation</li></ul></nav>
-        <main><table class="wide"><tr><td>[Visible](missing.md)</td></tr></table></main>""",
+        <main><table><tr><td>[Visible](missing.md)</td></tr></table>
+        <a href="other.md">Raw markdown link</a></main>""",
         encoding="utf-8",
     )
     output = tmp_path / "report"
 
-    report = audit_site_ui(site, output, sample_size=0, seed=0)
+    report = audit_site_ui(site, output)
 
     rules = {item["rule_id"] for item in report["findings"]}
-    assert {"SND-RENDER-001", "SND-NAV-001", "SND-LAYOUT-001"} <= rules
+    assert {"SND-RENDER-001", "SND-NAV-001", "SND-LINK-001"} <= rules
     observations = [
         observation
         for finding in report["findings"]
@@ -147,21 +115,11 @@ def test_browser_audit_writes_report_and_remains_report_only(tmp_path):
     ]
     detector_ids = {item["detector_id"] for item in observations}
     assert "static.visible-markdown-link" in detector_ids
-    assert "browser.visible-markdown-link" in detector_ids
-    assert "browser.horizontal-page-overflow" in detector_ids
-    clipped_contexts = {
-        item["context"]
-        for item in observations
-        if item["detector_id"] == "browser.clipped-content"
-    }
-    assert all('"tag": "nav"' not in context for context in clipped_contexts)
     assert all(item["confidence"] in {"high", "medium", "low"} for item in observations)
-    assert report["schema_version"] == 2
+    assert report["schema_version"] == 3
     assert report["ruleset"]["schema_version"] == 1
     assert len(report["ruleset"]["digest"]) == 64
     assert len(report["ruleset"]["rules"]) == 10
     assert report["coverage"]["html_pages"] == 1
-    assert report["coverage"]["browser_renders"] == 2
     assert (output / "findings.json").is_file()
     assert (output / "index.html").is_file()
-    assert list((output / "screenshots").glob("*.png"))

@@ -4,6 +4,38 @@ Reverse-chronological record of significant project work. This is a historical i
 
 Older entries are archived in [.agent/worklog/2026-H2.md](worklog/2026-H2.md).
 
+## 2026-07-29 — Move publication off CI and remove browser-based UI validation
+
+- **Work performed by:** Claude, with direction from Victor Bilgin
+- **Branch:** `simplify/local-publish-no-browser`
+- **Commit:** Pending (`Move publication off CI and remove browser-based UI validation` intended subject)
+
+### Outcome
+
+Removed `.github/workflows/` entirely and moved release publication to an operator-run local sequence (ADR-0023); removed Playwright and made `sndocs audit-ui` static-only (ADR-0024). Fixed two independent fail-open defects discovered while designing the replacement, and landed two portability improvements that make the theme and Pagefind coupling to Material for MkDocs smaller ahead of a possible future generator evaluation.
+
+### Changes and decisions
+
+- Added `src/sndocs/r2.py`, a thin `aws` CLI subprocess wrapper (list/get/put objects and trees, batch delete) with an injectable runner, chosen over boto3 to avoid a new dependency tree and reuse the `aws`-shaped verification contract `deployment.py` already had.
+- Added `src/sndocs/publish_cli.py` (`resolve-active`, `push-family`, `assemble-candidate`, `push-candidate`, `promote`, `recovery-manifest`, `cleanup`) as the only module with irreversible side effects, replacing every `aws s3`/`jq`/`gh` invocation that previously lived only in workflow YAML. `deployment.py`/`deployment_cli.py` remain pure.
+- Introduced `pointers/production.json` in R2 as the fail-closed record of what is live, written only by `promote` after HTTP verification passes; the Worker never reads it (added a test asserting this). `resolve-active` refuses to proceed without it unless `--allow-bootstrap` is passed.
+- Fixed `deployment_cli._read` returning `None` for a missing path instead of raising — the root cause of a silent "initial release" plan that would have dropped every archived family. `plan`/`assemble` now require an explicit `--active-release` or `--no-active-release`.
+- Moved `recovery.prefix` derivation into `build_family_inventory` (previously injected by `jq` in the workflow) and made `plan_cleanup` refuse to plan (`require_recovery=True` default) when a protected release's family record lacks recovery metadata — the prior `.get("recovery", {})` guard failed open.
+- Removed `ui_audit.browser_audit` and everything that existed only to feed it (page sampling, viewport/screenshot fields); `sndocs audit-ui` is now the six static detectors only. Demoted `assessment: automated` to `manual` on the five rules that lost their only detector (`SND-LAYOUT-001/002`, `SND-FUNC-001/002`, `SND-LINK-003`), keeping `status: active` so they stay visible in the report and become the preview checklist's responsibility. `findings.json` moved to schema-version-3.
+- Removed `scripts/run_with_disk_limit.py` (CI-only) and the `GITHUB_OUTPUT` helpers in `cli.py`/`deployment_cli.py`.
+- Replaced Pagefind's `--root-selector .md-content__inner` with a `data-pagefind-body` attribute added via a `theme/main.html` content-block override, removing a Material CSS class dependency; confirmed via a real build that Pagefind finds and scopes to the tag and that the nav sits outside it.
+- Added `mkdocs`/`mkdocs-material` versions to `pipeline_fingerprint`, which previously hashed only the Pagefind version — a Material upgrade did not invalidate cached families before this.
+- Added ADR-0023 (supersedes ADR-0022 for execution environment and approval gate only) and ADR-0024 (supersedes ADR-0015 in full); added metadata-only supersession notes to both. Rewrote the deployment runbook's Preflight, Normal publication, Promotion/rollback, and Cleanup sections around the new local commands; updated README, CLAUDE.md, and CONTEXT.md.
+
+### Verification
+
+- `.venv/bin/pytest`: 191 passed, 1 skipped (case-insensitive-filesystem skip, pre-existing).
+- `npm test --prefix worker`: 10 passed (8 pre-existing plus 2 new: production never fetches a pointer, the `BOOTSTRAP_REQUIRED` sentinel fails closed).
+- Verified the trimmed `requirements.lock` (playwright/pyee/greenlet removed) installs cleanly and the full suite passes from a fresh venv built only from it.
+- Verified `data-pagefind-body` end to end with a real `mkdocs build` + `pagefind` run: Pagefind logs "Found a data-pagefind-body element... Ignoring pages without this tag," and the tag sits inside the content article, outside the nav, in the generated HTML.
+- Did not run a real publication against R2 (no `aws` CLI in this environment); `publish_cli` is covered by unit tests against a fake R2 client, not a live bucket. Running one real publication against a scratch prefix is recorded as next work.
+- `git diff --check` passed; `.agent/CONTEXT.md` is within its 150-line/1,000-word budget (78 lines, 996 words).
+
 ## 2026-07-29 — Temporarily move preview acceptance to manual approval
 
 - **Work performed by:** Codex, with direction from Victor Bilgin

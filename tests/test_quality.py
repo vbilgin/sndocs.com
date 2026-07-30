@@ -23,11 +23,16 @@ def _copy_ruleset(tmp_path: Path) -> Path:
 
 
 def _add_rule(root: Path, rule_id: str, *, status: str, assessment: str) -> Path:
-    source = root / "rules" / "SND-FUNC-001-no-page-errors.md"
-    text = source.read_text(encoding="utf-8")
-    text = text.replace("SND-FUNC-001", rule_id)
+    # SND-LINK-002 stays `assessment: automated` after the browser-detector
+    # removal, so the substitution below is never a silent no-op. A fixture
+    # built on one of the demoted rules would otherwise always produce
+    # `assessment: manual`, regardless of what the caller asked for.
+    source = root / "rules" / "SND-LINK-002-local-targets-must-exist.md"
+    source_text = source.read_text(encoding="utf-8")
+    text = source_text.replace("SND-LINK-002", rule_id)
     text = text.replace("status: active", f"status: {status}")
     text = text.replace("assessment: automated", f"assessment: {assessment}")
+    assert text != source_text, "the fixture substitution must actually change the source"
     target = root / "rules" / f"{rule_id}-fixture-rule.md"
     target.write_text(text, encoding="utf-8")
     return target
@@ -39,7 +44,7 @@ def test_packaged_ruleset_loads_and_has_deterministic_digest(tmp_path):
     copied = load_quality_ruleset(copied_root)
 
     assert len(packaged.rules) == 10
-    assert len(packaged.detectors) == 14
+    assert len(packaged.detectors) == 6
     assert packaged.digest == copied.digest
     assert [item["id"] for item in packaged.catalog()] == sorted(packaged.rules)
 
@@ -74,8 +79,7 @@ def test_draft_manual_and_assisted_rules_do_not_require_detectors(tmp_path):
 
     report = {
         "findings": [],
-        "errors": [],
-        "coverage": {"html_pages": 0, "browser_renders": 0},
+        "coverage": {"html_pages": 0},
         "ruleset": {"digest": ruleset.digest},
     }
     rendered = _report_html(report, ruleset)
@@ -90,6 +94,41 @@ def test_active_automated_rule_requires_detector(tmp_path):
 
     with pytest.raises(ValueError, match="active automated rule has no detector"):
         load_quality_ruleset(root)
+
+
+def test_every_active_automated_rule_has_a_registered_detector():
+    """The failure mode above, checked the other way: the packaged ruleset
+    itself must never regress into shipping an automated rule with no
+    detector to back it. Five rules are intentionally `assessment: manual`
+    after the browser-only detectors were removed; the remaining five stay
+    `automated` and must each keep at least one static detector."""
+    ruleset = load_quality_ruleset()
+
+    automated = {
+        rule.id
+        for rule in ruleset.rules.values()
+        if rule.status == "active" and rule.assessment == "automated"
+    }
+    covered = {detector.rule_id for detector in ruleset.detectors.values()}
+
+    assert automated == {
+        "SND-RENDER-001",
+        "SND-RENDER-002",
+        "SND-NAV-001",
+        "SND-LINK-001",
+        "SND-LINK-002",
+    }
+    assert automated <= covered
+    assert all(detector.phase == "static" for detector in ruleset.detectors.values())
+
+
+def test_packaged_ruleset_loads_with_only_static_detectors():
+    from sndocs.quality import DEFAULT_DETECTORS as detectors
+
+    assert all(detector.phase == "static" for detector in detectors)
+    assert load_quality_ruleset().detectors.keys() == {
+        detector.id for detector in detectors
+    }
 
 
 @pytest.mark.parametrize(

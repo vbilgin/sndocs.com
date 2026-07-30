@@ -4,7 +4,7 @@ title: Audited pages must not raise browser page errors
 status: active
 category: function
 severity: error
-assessment: automated
+assessment: manual
 references: []
 tags:
   - browser
@@ -24,7 +24,7 @@ Uncaught errors can disable search, navigation, release selection, or other requ
 
 ## Applicability
 
-This rule applies during local Chromium rendering of selected pages.
+This rule applies to pages opened locally with `sndocs serve` during manual review.
 
 ## Passing Examples
 
@@ -40,11 +40,11 @@ ReferenceError: missingValue is not defined
 
 ## Evaluation
 
-The browser detector records uncaught `pageerror` events during page loading and inspection.
+This rule has no automated browser detector; assess it manually by opening representative pages with `sndocs serve` and checking the browser console for uncaught errors as part of the preview checklist before promotion.
 
 ## Limitations
 
-Only code paths exercised by the audit are observed.
+Only code paths exercised during manual review are observed.
 
 ## Remediation
 

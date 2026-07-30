@@ -67,56 +67,15 @@ def check_http(base_url: str, release: dict, preview: bool) -> None:
         raise ValueError(f"missing family page returned HTTP {status}")
 
 
-def check_browser(base_url: str, release: dict) -> None:
-    from playwright.sync_api import sync_playwright
-
-    latest = release["latest"]
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
-        page = browser.new_page()
-        errors = []
-        failed_responses = []
-        page.on(
-            "console",
-            lambda message: errors.append(message.text)
-            if message.type == "error"
-            else None,
-        )
-        page.on("pageerror", lambda error: errors.append(str(error)))
-        page.on(
-            "response",
-            lambda response: failed_responses.append(
-                f"{response.status} {response.url}"
-            )
-            if response.status >= 400
-            else None,
-        )
-        page.goto(f"{base_url.rstrip('/')}/{latest}/", wait_until="networkidle")
-        page.get_by_role("button", name="Search").click()
-        query = page.locator("pagefind-modal input")
-        query.wait_for(state="visible")
-        query.fill(latest)
-        page.locator("pagefind-summary").wait_for(state="visible", timeout=10000)
-        if errors or failed_responses:
-            raise ValueError(
-                "browser acceptance reported failures: "
-                f"console={errors}, responses={failed_responses}"
-            )
-        browser.close()
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--release", type=Path, required=True)
     parser.add_argument("--preview", action="store_true")
-    parser.add_argument("--browser", action="store_true")
     args = parser.parse_args()
     release = json.loads(args.release.read_text(encoding="utf-8"))
     try:
         check_http(args.base_url, release, args.preview)
-        if args.browser:
-            check_browser(args.base_url, release)
     except (ValueError, OSError) as error:
         print(f"acceptance failed: {error}", file=sys.stderr)
         return 1

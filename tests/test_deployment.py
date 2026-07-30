@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import copy
-import hashlib
-import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
+from support import (
+    FINGERPRINT,
+    production_site as _site,
+    recovery_archive as _recovery_archive,
+    release as _release,
+    write_json as _write_json,
+)
 
 from sndocs.artifacts import validate_site
-from sndocs.builder import empty_link_counts
 from sndocs.deployment import (
     StoredObject,
     assemble_candidate,
@@ -26,104 +30,6 @@ from sndocs.deployment import (
     validate_release_manifest,
     verify_uploaded_inventory,
 )
-
-FINGERPRINT = "f" * 64
-
-
-def _write_json(path: Path, value: object) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value), encoding="utf-8")
-
-
-def _site(tmp_path: Path, family: str, sha: str, *, text: str = "page") -> Path:
-    site = tmp_path / f"site-{family}"
-    family_root = site / family
-    family_root.mkdir(parents=True)
-    (family_root / "index.html").write_text(text, encoding="utf-8")
-    (family_root / "404.html").write_text("missing", encoding="utf-8")
-    pagefind = family_root / "pagefind"
-    (pagefind / "index").mkdir(parents=True)
-    for name in (
-        "pagefind.js",
-        "pagefind-entry.json",
-        "pagefind-component-ui.js",
-        "pagefind-component-ui.css",
-    ):
-        (pagefind / name).write_text("pagefind", encoding="utf-8")
-    (pagefind / "index" / "en_fixture.pf_index").write_text(
-        "index", encoding="utf-8"
-    )
-    (site / "index.html").write_text(
-        f'<meta http-equiv="refresh" content="0; url=./{family}/">',
-        encoding="utf-8",
-    )
-    (site / "SERVICENOW-LICENSE.txt").write_text("license", encoding="utf-8")
-    counts = empty_link_counts()
-    _write_json(
-        site / "build-manifest.json",
-        {
-            "schema_version": 1,
-            "pipeline_version": "0",
-            "pipeline_fingerprint": FINGERPRINT,
-            "built_at": "2026-01-01T00:00:00+00:00",
-            "upstream_repository": "ServiceNow/ServiceNowDocs",
-            "build_profile": "production",
-            "latest": family,
-            "families": {
-                family: {
-                    "source_sha": sha,
-                    "archived": False,
-                    "path": f"/{family}/",
-                    "link_counts": counts,
-                }
-            },
-        },
-    )
-    _write_json(
-        site / "versions.json",
-        {
-            "latest": family,
-            "versions": [
-                {
-                    "family": family,
-                    "title": family.title(),
-                    "path": f"/{family}/",
-                    "archived": False,
-                }
-            ],
-        },
-    )
-    _write_json(
-        site / "link-report.json",
-        {
-            "schema_version": 2,
-            "families": {
-                family: {
-                    "family": family,
-                    "counts": counts,
-                    "repairs": [],
-                    "placeholders": [],
-                    "omitted_images": [],
-                }
-            },
-        },
-    )
-    return site
-
-
-def _release(tmp_path: Path, family: str, sha: str):
-    site = _site(tmp_path, family, sha)
-    inventory = build_family_inventory(
-        site, family, sha, FINGERPRINT, created_at="2026-01-01T00:00:00+00:00"
-    )
-    root = tmp_path / f"root-{family}"
-    release = assemble_candidate(
-        site,
-        root,
-        inventory,
-        created_at="2026-01-01T00:00:00+00:00",
-    )
-    return site, root, inventory, release
 
 
 def test_planner_covers_initial_no_change_rebuild_and_new_latest(tmp_path):
@@ -181,6 +87,40 @@ def test_family_inventory_is_deterministic_and_rejects_corruption(tmp_path):
         validate_family_inventory(corrupted)
 
 
+def test_inventory_derives_the_recovery_prefix_and_validates_the_archive(tmp_path):
+    site = _site(tmp_path, "zurich", "sha")
+
+    inventory = build_family_inventory(
+        site,
+        "zurich",
+        "sha",
+        FINGERPRINT,
+        created_at="now",
+        recovery_archive=_recovery_archive("zurich"),
+    )
+
+    artifact_id = family_artifact_id("zurich", "sha", FINGERPRINT)
+    assert inventory["recovery"]["prefix"] == (
+        f"recovery/families/zurich/{artifact_id}"
+    )
+    assert inventory["recovery"]["archive"]["name"] == "sndocs-zurich.tar.gz"
+
+    relocated = copy.deepcopy(inventory)
+    relocated["recovery"]["prefix"] = "recovery/families/zurich/elsewhere"
+    with pytest.raises(ValueError, match="recovery prefix is invalid"):
+        validate_family_inventory(relocated)
+
+    unchecksummed = copy.deepcopy(inventory)
+    unchecksummed["recovery"]["archive"]["parts"][0]["sha256"] = "short"
+    with pytest.raises(ValueError, match="invalid recovery checksum"):
+        validate_family_inventory(unchecksummed)
+
+    partless = copy.deepcopy(inventory)
+    del partless["recovery"]["archive"]["parts"]
+    with pytest.raises(ValueError, match="no parts"):
+        validate_family_inventory(partless)
+
+
 def test_family_inventory_sorts_prefix_collisions_by_serialized_path(tmp_path):
     site = _site(tmp_path, "zurich", "sha")
     family_root = site / "zurich"
@@ -225,6 +165,25 @@ def test_candidate_archives_only_previously_published_families(tmp_path):
     assert candidate["families"]["yokohama"]["archived"] is True
     assert "washington" not in candidate["families"]
     validate_candidate_root(candidate_root, candidate)
+
+
+def test_candidate_assembly_requires_both_active_release_and_active_root(tmp_path):
+    _old_site, old_root, _old_inventory, active = _release(
+        tmp_path, "yokohama", "sha-1"
+    )
+    new_site = _site(tmp_path, "zurich", "sha-2")
+    new_inventory = build_family_inventory(
+        new_site, "zurich", "sha-2", FINGERPRINT, created_at="now"
+    )
+
+    with pytest.raises(ValueError, match="active root metadata is required"):
+        assemble_candidate(
+            new_site, tmp_path / "candidate-a", new_inventory, active, None
+        )
+    with pytest.raises(ValueError, match="requires the active release manifest"):
+        assemble_candidate(
+            new_site, tmp_path / "candidate-b", new_inventory, None, old_root
+        )
 
 
 def test_archived_inventory_mapping_remains_immutable_across_releases(tmp_path):
@@ -337,17 +296,26 @@ def test_root_and_family_recovery_reconstruct_a_valid_host_agnostic_site(tmp_pat
     validate_site(restored)
 
 
-def test_cleanup_protects_active_rollback_archived_and_grace_objects(tmp_path):
+def _cleanup_fixture(tmp_path: Path, *, with_recovery: bool):
     _old_site, old_root, _old_inventory, old_release = _release(
-        tmp_path, "yokohama", "sha-1"
+        tmp_path, "yokohama", "sha-1", with_recovery=with_recovery
     )
     new_site = _site(tmp_path, "zurich", "sha-2")
     new_inventory = build_family_inventory(
-        new_site, "zurich", "sha-2", FINGERPRINT
+        new_site,
+        "zurich",
+        "sha-2",
+        FINGERPRINT,
+        recovery_archive=_recovery_archive("zurich") if with_recovery else None,
     )
     active = assemble_candidate(
         new_site, tmp_path / "new-root", new_inventory, old_release, old_root
     )
+    return old_release, active
+
+
+def test_cleanup_protects_active_rollback_archived_and_grace_objects(tmp_path):
+    old_release, active = _cleanup_fixture(tmp_path, with_recovery=True)
     now = datetime(2026, 2, 1, tzinfo=timezone.utc)
     old = now - timedelta(days=30)
     recent = now - timedelta(days=1)
@@ -359,9 +327,22 @@ def test_cleanup_protects_active_rollback_archived_and_grace_objects(tmp_path):
             f"{active['families']['yokohama']['prefix']}/index.html", 10, old
         ),
         StoredObject(f"releases/{old_release['release_id']}.json", 10, old),
+        StoredObject(
+            f"{active['families']['zurich']['recovery']['prefix']}/"
+            "sndocs-zurich.tar.gz",
+            10,
+            old,
+        ),
+        StoredObject(
+            f"{active['families']['yokohama']['recovery']['prefix']}/"
+            "sndocs-yokohama.tar.gz",
+            10,
+            old,
+        ),
         StoredObject("content/orphan/dead/index.html", 10, old),
         StoredObject("content/orphan/recent/index.html", 10, recent),
         StoredObject("pointers/preview.json", 10, old),
+        StoredObject("pointers/production.json", 10, old),
     ]
     plan = plan_cleanup(
         objects,
@@ -374,3 +355,25 @@ def test_cleanup_protects_active_rollback_archived_and_grace_objects(tmp_path):
         "content/orphan/dead/index.html"
     ]
     assert plan["delete_bytes"] == 10
+
+
+def test_cleanup_refuses_to_plan_without_recovery_protection(tmp_path):
+    old_release, active = _cleanup_fixture(tmp_path, with_recovery=False)
+    now = datetime(2026, 2, 1, tzinfo=timezone.utc)
+    old = now - timedelta(days=30)
+    objects = [StoredObject("content/orphan/dead/index.html", 10, old)]
+
+    with pytest.raises(ValueError, match="cannot protect recovery assets"):
+        plan_cleanup(objects, active, old_release, [old_release, active], now=now)
+
+    permitted = plan_cleanup(
+        objects,
+        active,
+        old_release,
+        [old_release, active],
+        now=now,
+        require_recovery=False,
+    )
+    assert [item["key"] for item in permitted["delete"]] == [
+        "content/orphan/dead/index.html"
+    ]

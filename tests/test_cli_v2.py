@@ -89,22 +89,20 @@ def test_clean_replaces_output_after_discovery_succeeds(tmp_path, monkeypatch):
     assert not marker.exists()
 
 
-def test_dry_run_is_non_mutating_and_does_not_write_github_output(tmp_path, monkeypatch, capsys):
+def test_dry_run_is_non_mutating(tmp_path, monkeypatch, capsys):
     config = write_config(tmp_path)
     output = tmp_path / "site"
     output.mkdir()
     marker = output / "keep"
     marker.write_text("keep", encoding="utf-8")
-    github_output = tmp_path / "github-output"
-    monkeypatch.setenv("GITHUB_OUTPUT", str(github_output))
     monkeypatch.setattr(cli, "discover", lambda *_args, **_kwargs: result(["australia"]))
     assert cli.main(["build", "--config", str(config), "--dry-run", "--output", str(output), "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["actions"][0]["action"] == "rebuild"
     assert marker.exists()
-    assert not github_output.exists()
 
 
-def test_build_writes_automatic_github_outputs(tmp_path, monkeypatch, capsys):
+def test_build_reports_changes_only_through_its_own_result(tmp_path, monkeypatch, capsys):
+    """Builds no longer write GITHUB_OUTPUT; the JSON result is the interface."""
     config = write_config(tmp_path)
     output = tmp_path / "site"
     github_output = tmp_path / "github-output"
@@ -118,8 +116,10 @@ def test_build_writes_automatic_github_outputs(tmp_path, monkeypatch, capsys):
 
     monkeypatch.setattr(cli, "build_site", fake_build)
     assert cli.main(["build", "--config", str(config), "--output", str(output), "--json"]) == 0
-    assert json.loads(capsys.readouterr().out)["changed"] is True
-    assert github_output.read_text(encoding="utf-8") == "changed=true\nlatest=australia\n"
+    reported = json.loads(capsys.readouterr().out)
+    assert reported["changed"] is True
+    assert reported["latest"] == "australia"
+    assert not github_output.exists()
 
 
 def test_family_validation_rejects_duplicates_and_multiple_smoke_families(tmp_path):
@@ -197,8 +197,7 @@ def test_audit_never_invokes_the_build_path(tmp_path, monkeypatch):
         "audit_site_ui",
         lambda *_args, **_kwargs: {
             "findings": [],
-            "errors": [],
-            "coverage": {"html_pages": 0, "browser_renders": 0},
+            "coverage": {"html_pages": 0},
         },
     )
 

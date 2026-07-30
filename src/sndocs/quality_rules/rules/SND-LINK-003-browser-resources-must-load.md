@@ -4,7 +4,7 @@ title: Browser resources must load successfully
 status: active
 category: link
 severity: error
-assessment: automated
+assessment: manual
 references: []
 tags:
   - browser
@@ -24,7 +24,7 @@ Missing scripts, stylesheets, fonts, and images can break layout, interaction, b
 
 ## Applicability
 
-This rule applies to requests initiated during local Chromium audit rendering.
+This rule applies to requests initiated while browsing pages locally with `sndocs serve` during manual review.
 
 ## Passing Examples
 
@@ -40,11 +40,11 @@ This rule applies to requests initiated during local Chromium audit rendering.
 
 ## Evaluation
 
-The browser detector observes failed requests and responses with status codes of 400 or greater.
+This rule has no automated browser detector; assess it manually with `sndocs serve` and the browser network panel, confirming representative pages load with no failed request or response of 400 or greater, as part of the preview checklist before promotion.
 
 ## Limitations
 
-The audit observes only resources requested by selected pages and the configured browser state.
+Manual assessment observes only resources requested by the pages reviewed during the checklist, not the full site.
 
 ## Remediation
 

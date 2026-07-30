@@ -11,7 +11,7 @@ The context system is layered (ADR-0006):
 - [AGENTS.md](AGENTS.md) — short, stable repository instructions.
 - [.agent/CONTEXT.md](.agent/CONTEXT.md) — bounded current-state handoff (< 150 lines / 1,000 words). Read it in full before substantial work; update it only when material work changes architecture, invariants, interfaces, status, risks, or next steps.
 - [.agent/WORKLOG.md](.agent/WORKLOG.md) — reverse-chronological significant work; search it selectively, never load it wholesale. Older entries archive to `.agent/worklog/YYYY-HN.md`.
-- [docs/adr/](docs/adr/README.md) — 22 accepted ADRs that are current policy. Read only the relevant ones. Never rewrite accepted rationale; supersede with a new numbered ADR added to `docs/adr/README.md`.
+- [docs/adr/](docs/adr/README.md) — 24 accepted ADRs (plus superseded history) that are current policy. Read only the relevant ones. Never rewrite accepted rationale; supersede with a new numbered ADR added to `docs/adr/README.md`.
 
 Repository state is authoritative over documentation. Report conflicts rather than silently picking one.
 
@@ -47,11 +47,7 @@ npm ci --prefix worker && npm test --prefix worker
 XDG_CONFIG_HOME=/tmp/sndocs-wrangler WRANGLER_LOG_PATH=/tmp/sndocs-wrangler.log npm run check --prefix worker
 ```
 
-Browser-dependent tests (`tests/test_search_browser.py`, part of `tests/test_ui_audit.py`) skip unless Playwright is installed:
-
-```bash
-.venv/bin/python -m pip install -e '.[ui]' && .venv/bin/playwright install chromium
-```
+There is no browser dependency: `sndocs audit-ui` is a static-only scan (ADR-0024), and every test runs without Playwright or Chromium.
 
 Documentation-only changes: verify referenced paths and links, inspect Markdown structure, and run `git diff --check`.
 
@@ -81,7 +77,7 @@ Fastest useful checks, in increasing cost — prefer these over full builds, whi
 .venv/bin/sndocs build --output site-diagnostic --source ../ServiceNowDocs --family australia
 ```
 
-Full pipeline: `build` → `validate` → `package`. `audit-ui` and `quality` are report-only diagnostics. `serve --site DIR` serves a completed site over HTTP (required — clean directory URLs do not work over `file://`). Recovery/publication plumbing lives behind `python -m sndocs.deployment_cli` (`plan`, `inventory`, `assemble`, `verify-*`, `package`, `reconstruct`, `cleanup-plan`, `cleanup-batches`), which is internal to CI and the runbook rather than public CLI surface.
+Full pipeline: `build` → `validate` → `package`. `audit-ui` and `quality` are report-only diagnostics. `serve --site DIR` serves a completed site over HTTP (required — clean directory URLs do not work over `file://`). Publication has no CI — it is a manual, operator-run sequence documented in [docs/deployment-runbook.md](docs/deployment-runbook.md) (ADR-0023), built from two internal modules rather than public CLI surface: `python -m sndocs.deployment_cli` (`plan`, `inventory`, `assemble`, `validate`, `verify-*`, `package`, `reconstruct`, `cleanup-plan`, `cleanup-batches`) holds pure, file-in/file-out release logic with no network or subprocess calls; `python -m sndocs.publish_cli` (`resolve-active`, `push-family`, `assemble-candidate`, `push-candidate`, `promote`, `recovery-manifest`, `cleanup`) is the only place R2 uploads, `wrangler`, and `gh` are actually invoked.
 
 CLI safety contract (ADR-0013): existing output is never replaced implicitly — `--clean` is required; `--dry-run` never writes or deletes; `--reuse-from` must differ from `--output`; finite commands print one JSON object on stdout with `--json` while progress goes to stderr.
 
@@ -98,11 +94,13 @@ A build is a deterministic transformation of an upstream Git snapshot into a hos
 - `builder.py` — the orchestrator: build planning (`plan_build`, shared by `--dry-run` and real builds), per-family builds, Pagefind indexing, deterministic preview sampling, reuse of unchanged families, archive retention, manifest assembly, and the package-wide `pipeline_fingerprint`.
 - `artifacts.py` — strict validation of an assembled site plus ZIP/TAR packaging with SHA-256 sums.
 - `quality.py` + `quality_rules/` — the versioned ruleset: Markdown rules with strict YAML frontmatter, stable permanent `SND-*` IDs, and registered detectors.
-- `ui_audit.py` — applies those rules through static scanning of every page plus sampled Chromium rendering. Report-only: findings never fail the command.
-- `deployment.py` / `deployment_cli.py` — latest-only release planning, inventories, candidate assembly, deterministic archives and >1.9 GiB sharding, upload verification, and guarded cleanup.
-- `theme/` — overrides, branding assets, and the version-selector JavaScript.
+- `ui_audit.py` — applies the ruleset's static detectors to every generated page. Report-only: findings never fail the command. Five rules (overflow, clipping, page/console errors, failed resources) have `assessment: manual` and no detector — see ADR-0024.
+- `deployment.py` / `deployment_cli.py` — pure, side-effect-free release logic: latest-only planning, inventories (with recovery metadata), candidate assembly, deterministic archives and >1.9 GiB sharding, upload verification, and cleanup planning. No network or subprocess calls.
+- `r2.py` — a thin `aws` CLI subprocess wrapper (list/get/put objects and trees, batch delete) with an injectable runner for testing. All R2 I/O lives here and nowhere else.
+- `publish_cli.py` — the only module with irreversible side effects: orchestrates `deployment.py` + `r2.py` + `wrangler` + `scripts/verify_deployment.py` into the publication sequence documented in the runbook.
+- `theme/` — overrides, branding assets, and the version-selector JavaScript. `main.html` tags the content article with `data-pagefind-body` so Pagefind's scan boundary is a portable attribute rather than a Material CSS class.
 
-Around that: `worker/` is the Cloudflare Worker serving private R2 objects through a version-pinned release binding; `.github/workflows/build-site.yml` is the manual publication pipeline (`test-and-plan` → `build-latest` → `assemble-candidate` → protected `promote-production` → `publish-recovery` → `cleanup`); `scripts/run_with_disk_limit.py` aborts CI builds that exceed a disk budget; `scripts/verify_deployment.py` performs deployment verification.
+Around that: `worker/` is the Cloudflare Worker serving private R2 objects through a version-pinned release binding; `scripts/verify_deployment.py` performs stdlib-only HTTP deployment verification (release header, range requests, 404s) used by `publish_cli promote`.
 
 ### Build profiles
 
@@ -116,7 +114,7 @@ Three mutually exclusive profiles recorded in `build-manifest.json` as `build_pr
 
 - MkDocs strict mode stays on. Ambiguity and pipeline-created broken links are fatal. Expected omitted-navigation listings are suppressed without weakening strict validation (ADR-0014); stale-anchor diagnostics remain informational by choice.
 - Publication indexes define navigation, but all family Markdown is rendered.
-- Scheduled publication builds only current latest; every family previously published as latest stays under `/<family>/` as an immutable archive. `sndocs build` still defaults to all selected current families — the latest-with-archives policy belongs to deployment automation only.
+- Publication builds only current latest; every family previously published as latest stays under `/<family>/` as an immutable archive. `sndocs build` still defaults to all selected current families — the latest-with-archives policy belongs to `publish_cli` only.
 - Upstream meaning is preserved. Recovery of malformed source data must be deterministic and auditable; intentionally omitted upstream media is not restored; enrichment is not editorial restructuring.
 - Topics use host-agnostic directory URLs (`/topic/` backed by `topic/index.html`).
 - Generated Markdown, HTML, build directories, downloaded upstream repos, packaged artifacts, caches, and virtual environments are never committed.
@@ -129,7 +127,7 @@ Follow [docs/ui-remediation.md](docs/ui-remediation.md) (ADR-0017): fix the earl
 
 ### Deployment
 
-[docs/deployment-runbook.md](docs/deployment-runbook.md) (ADR-0022) governs publication. Publication is manual during the current two-release rollout, and production promotion pauses at a protected GitHub Environment where approval records that the manual preview checklist passed. Do not treat deployment steps as routine verification, and do not make an R2 origin public to work around the Worker.
+[docs/deployment-runbook.md](docs/deployment-runbook.md) (ADR-0022, ADR-0023) governs publication. There is no CI: the operator runs the runbook's commands from their own machine, and `publish_cli promote --i-reviewed-preview` refuses to proceed unless that flag is passed after the manual preview checklist — the flag is the only record that the checklist happened. `pointers/production.json` is the fail-closed answer to "what is live"; the Worker never reads it. Do not treat deployment steps as routine verification, and do not make an R2 origin public to work around the Worker.
 
 ## Dependencies and branding
 

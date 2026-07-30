@@ -1,6 +1,6 @@
 # ADR-0015: Audit generated UI with a local hybrid scanner
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0024](0024-validate-generated-ui-without-a-browser.md)
 - **Date:** 2026-07-22
 - **Decision owner:** Victor Bilgin
 - **Related commit:** `dc50551` — `Add local hybrid UI audit`

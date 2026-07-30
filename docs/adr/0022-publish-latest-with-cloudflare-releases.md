@@ -1,6 +1,7 @@
 # ADR-0022: Publish latest with immutable Cloudflare releases
 
 - **Status:** Accepted
+- **Supersession note:** [ADR-0023](0023-publish-from-a-local-operator-workstation.md) supersedes this decision's execution environment and approval gate only; the release model, immutability, retention, and Worker behavior below remain in effect.
 - **Date:** 2026-07-28
 - **Decision owner:** Victor Bilgin
 - **Related commit:** `3411dec` (`Implement latest-release Cloudflare deployment`)

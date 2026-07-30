@@ -16,6 +16,7 @@ from .config import load_settings
 
 RELEASE_SCHEMA_VERSION = 1
 FAMILY_INVENTORY_SCHEMA_VERSION = 1
+POINTER_SCHEMA_VERSION = 1
 ROOT_FILES = (
     "index.html",
     "versions.json",
@@ -129,6 +130,62 @@ def plan_latest_release(
     }
 
 
+def _pointer(release_id: str) -> dict:
+    if not SHA256_RE.fullmatch(release_id or ""):
+        raise ValueError(f"release pointer needs a release digest: {release_id!r}")
+    return {"schema_version": POINTER_SCHEMA_VERSION, "release_id": release_id}
+
+
+def preview_pointer(release_id: str) -> dict:
+    """The mutable candidate pointer that only the preview Worker reads."""
+    return _pointer(release_id)
+
+
+def production_pointer(release_id: str) -> dict:
+    """The record of what is live. The Worker must never read this.
+
+    Production pins its release through a versioned Worker variable; this
+    object exists so a local operator can answer "what is live?" without
+    guessing from object listings.
+    """
+    return _pointer(release_id)
+
+
+def build_reconstruction(release: dict, root_recovery: dict) -> dict:
+    """Describe how to rebuild the published site from recovery assets."""
+    validate_release_manifest(release)
+    latest = release["latest"]
+    families: dict[str, dict | None] = {}
+    without_recovery = []
+    for family, record in release["families"].items():
+        archive = record.get("recovery", {}).get("archive")
+        if archive is None:
+            if family == latest:
+                raise ValueError(
+                    f"latest family {family} has no recovery archive; "
+                    "recovery assets must exist before a release is published"
+                )
+            without_recovery.append(family)
+        families[family] = archive
+    return {
+        "schema_version": 1,
+        "release_id": release["release_id"],
+        "latest": latest,
+        "root": root_recovery,
+        "families": families,
+        "families_without_recovery": sorted(without_recovery),
+    }
+
+
+def recovery_checksum_manifest(paths: Iterable[Path]) -> str:
+    """Return coreutils-format checksums, ordered by name rather than by glob."""
+    rows = sorted((path.name, sha256_file(path)) for path in paths)
+    names = [name for name, _ in rows]
+    if len(names) != len(set(names)):
+        raise ValueError("recovery assets contain duplicate names")
+    return "".join(f"{digest}  {name}\n" for name, digest in rows)
+
+
 def _tree_entries(root: Path) -> list[dict]:
     entries = []
     for path in (candidate for candidate in root.rglob("*") if candidate.is_file()):
@@ -155,6 +212,10 @@ def inventory_tree(root: Path) -> dict:
     }
 
 
+def recovery_prefix_for(family: str, artifact_id: str) -> str:
+    return f"recovery/families/{family}/{artifact_id}"
+
+
 def build_family_inventory(
     site: Path,
     family: str,
@@ -162,6 +223,7 @@ def build_family_inventory(
     pipeline_fingerprint_value: str,
     *,
     created_at: str | None = None,
+    recovery_archive: dict | None = None,
 ) -> dict:
     _validate_family(family)
     family_root = site / family
@@ -198,6 +260,13 @@ def build_family_inventory(
         "objects": tree["objects"],
         "link_counts": record["link_counts"],
     }
+    if recovery_archive is not None:
+        # The prefix is derived here rather than supplied, so a caller cannot
+        # record recovery assets under a location cleanup will not protect.
+        inventory["recovery"] = {
+            "prefix": recovery_prefix_for(family, artifact_id),
+            "archive": recovery_archive,
+        }
     validate_family_inventory(inventory)
     return inventory
 
@@ -257,6 +326,30 @@ def validate_family_inventory(inventory: dict) -> None:
         raise ValueError("family inventory byte count is incorrect")
     if inventory["tree_sha256"] != _sha256_bytes(objects):
         raise ValueError("family inventory tree digest is incorrect")
+    if "recovery" in inventory:
+        _validate_recovery(family, expected_id, inventory["recovery"])
+
+
+def _validate_recovery(family: str, artifact_id: str, recovery: object) -> None:
+    if not isinstance(recovery, dict):
+        raise ValueError(f"family {family} recovery metadata must be an object")
+    expected_prefix = recovery_prefix_for(family, artifact_id)
+    if recovery.get("prefix") != expected_prefix:
+        raise ValueError(f"family {family} recovery prefix is invalid")
+    archive = recovery.get("archive")
+    if not isinstance(archive, dict):
+        raise ValueError(f"family {family} recovery archive metadata is missing")
+    parts = archive.get("parts")
+    if not isinstance(parts, list) or not parts:
+        raise ValueError(f"family {family} recovery archive has no parts")
+    for entry in (archive, *parts):
+        name = entry.get("name", "")
+        if not name or "/" in name or name.startswith("."):
+            raise ValueError(f"unsafe recovery asset name for {family}: {name!r}")
+        if not SHA256_RE.fullmatch(entry.get("sha256", "")):
+            raise ValueError(f"invalid recovery checksum for {family}: {name}")
+        if not isinstance(entry.get("bytes"), int) or entry["bytes"] < 0:
+            raise ValueError(f"invalid recovery byte count for {family}: {name}")
 
 
 def _family_release_record(inventory: dict, *, archived: bool) -> dict:
@@ -308,6 +401,8 @@ def _validate_family_release_record(family: str, record: dict) -> None:
         raise ValueError(f"release family byte count is invalid: {family}")
     if not SHA256_RE.fullmatch(record["tree_sha256"]):
         raise ValueError(f"release family tree digest is invalid: {family}")
+    if "recovery" in record:
+        _validate_recovery(family, expected_id, record["recovery"])
 
 
 def _release_identity_payload(manifest: dict) -> dict:
@@ -425,6 +520,8 @@ def assemble_candidate(
         raise ValueError("candidate assembly requires a single-family production build")
     if active_release is not None and active_root is None:
         raise ValueError("active root metadata is required when retaining archived families")
+    if active_root is not None and active_release is None:
+        raise ValueError("active root metadata requires the active release manifest")
     active_manifest, active_versions, active_links = _active_root_data(active_root)
     families = _retained_families(active_release, latest_inventory)
 
@@ -688,6 +785,33 @@ class StoredObject:
     last_modified: datetime
 
 
+def _require_recovery_metadata(
+    releases: list[dict], public_releases: list[dict]
+) -> None:
+    """Refuse to plan a cleanup that cannot protect its recovery assets.
+
+    Recovery protection is derived from ``recovery.prefix`` on each family
+    record. A record without it is not protected, so planning would quietly
+    select recovery assets for deletion. Fail closed instead.
+    """
+    unprotected = set()
+    for release in releases:
+        for record in release["families"].values():
+            if not record.get("recovery", {}).get("prefix"):
+                unprotected.add(record["family"])
+    for release in public_releases:
+        for record in release["families"].values():
+            if record["archived"] and not record.get("recovery", {}).get("prefix"):
+                unprotected.add(record["family"])
+    if unprotected:
+        raise ValueError(
+            "cleanup cannot protect recovery assets for: "
+            + ", ".join(sorted(unprotected))
+            + "; pass require_recovery=False only for a release that was "
+            "published before recovery metadata was recorded"
+        )
+
+
 def plan_cleanup(
     objects: Iterable[StoredObject],
     active_release: dict,
@@ -696,6 +820,7 @@ def plan_cleanup(
     *,
     now: datetime | None = None,
     grace_period: timedelta = timedelta(days=14),
+    require_recovery: bool = True,
 ) -> dict:
     validate_release_manifest(active_release)
     releases = [active_release]
@@ -705,6 +830,9 @@ def plan_cleanup(
     all_public = list(public_releases)
     for release in all_public:
         validate_release_manifest(release)
+
+    if require_recovery:
+        _require_recovery_metadata(releases, all_public)
 
     protected_prefixes = {
         f"releases/{release['release_id']}/"
@@ -745,6 +873,7 @@ def plan_cleanup(
         f"releases/{release['release_id']}.json" for release in releases
     }
     protected_keys.add("pointers/preview.json")
+    protected_keys.add("pointers/production.json")
     cutoff = (now or datetime.now(timezone.utc)) - grace_period
     deletions = []
     retained = []

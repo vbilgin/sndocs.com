@@ -173,6 +173,28 @@ def test_pipeline_fingerprint_tracks_effective_settings_and_package_files(tmp_pa
     )
 
 
+def test_pipeline_fingerprint_tracks_the_site_engine_version(tmp_path):
+    package = tmp_path / "sndocs"
+    package.mkdir()
+    (package / "module.py").write_text("VALUE = 1\n", encoding="utf-8")
+    settings = settings_for(tmp_path)
+    engines = {"mkdocs": "1.6.1", "mkdocs-material": "9.7.6"}
+
+    before = builder.pipeline_fingerprint(settings, package, site_engine_versions=engines)
+
+    upgraded_mkdocs = builder.pipeline_fingerprint(
+        settings, package, site_engine_versions={**engines, "mkdocs": "2.0.0"}
+    )
+    upgraded_material = builder.pipeline_fingerprint(
+        settings, package, site_engine_versions={**engines, "mkdocs-material": "9.8.0"}
+    )
+    unchanged = builder.pipeline_fingerprint(settings, package, site_engine_versions=engines)
+
+    assert upgraded_mkdocs != before
+    assert upgraded_material != before
+    assert unchanged == before
+
+
 def test_smoke_build_selects_latest_disables_search_and_cleans_family_work(tmp_path, monkeypatch):
     configured = settings_for(tmp_path)
     discovery = Discovery(

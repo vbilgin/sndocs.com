@@ -4,7 +4,7 @@ title: Pages must not overflow the viewport horizontally
 status: active
 category: layout
 severity: error
-assessment: automated
+assessment: manual
 references: []
 tags:
   - responsive
@@ -40,11 +40,11 @@ document width = 900px; mobile viewport = 390px
 
 ## Evaluation
 
-Chromium compares the document element's scroll width and client width with a small rounding tolerance.
+This rule has no automated browser detector; assess it manually with `sndocs serve` at representative desktop and mobile widths as part of the preview checklist before promotion.
 
 ## Limitations
 
-Components intentionally offering their own bounded horizontal scrolling do not necessarily violate this page-level rule.
+Components intentionally offering their own bounded horizontal scrolling do not necessarily violate this page-level rule. Manual assessment covers only the pages reviewed during the checklist, not the full site.
 
 ## Remediation
 

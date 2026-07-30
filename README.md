@@ -100,8 +100,7 @@ Preview incremental decisions without writing or deleting files:
 ```
 
 Finite commands accept `--json` before or after the command and emit one JSON object on standard
-output while progress goes to standard error. In GitHub Actions, a successful real build writes
-`changed` and `latest` automatically when `GITHUB_OUTPUT` is present.
+output while progress goes to standard error.
 
 Preview any completed build through the local web server:
 
@@ -117,29 +116,22 @@ filesystem protocol does not serve a directory's `index.html` automatically. Use
 
 ### Local UI audit
 
-Install the optional browser-audit dependency and its Chromium runtime once:
-
-```shell
-.venv/bin/python -m pip install -e '.[ui]'
-.venv/bin/playwright install chromium
-```
-
-Audit every generated HTML file structurally, then render high-risk pages and a deterministic
-100-page sample at desktop and mobile sizes:
+Audit every generated HTML file structurally with the static site-quality detectors:
 
 ```shell
 .venv/bin/sndocs audit-ui --site site --output ui-report
 ```
 
-The command writes a browsable `index.html`, stable `findings.json`, and screenshots for rendered
-findings. It is intentionally report-only: findings do not produce a failing exit status. Invalid
-input, missing browser setup, and an audit that cannot start remain command errors. Use
-`--sample-size` and `--seed` to tune repeatable browser coverage. Existing report directories are
-preserved unless `--clean` is supplied. A production family can take several minutes to scan even
-though only selected pages are opened in Chromium; generated reports are local artifacts and
+The command writes a browsable `index.html` and a stable `findings.json`. It is intentionally
+report-only: findings do not produce a failing exit status. Existing report directories are
+preserved unless `--clean` is supplied. This is a static scan with no browser dependency; per
+[ADR-0024](docs/adr/0024-validate-generated-ui-without-a-browser.md), page overflow, clipped
+components, uncaught page errors, console errors, and failed resource loads are assessed manually
+with `sndocs serve` as part of the [deployment runbook's](docs/deployment-runbook.md) preview
+checklist instead of by an automated browser pass. Generated reports are local artifacts and
 should not be committed.
 
-The schema-version-2 report groups observations from static and browser detectors under stable
+The schema-version-3 report groups observations from the static detectors under stable
 semantic rule IDs. Rule severity describes impact, while detector confidence describes how
 certain each observation is. Every report records the packaged ruleset schema, package version,
 active-rule catalog, and deterministic ruleset digest.
@@ -180,16 +172,19 @@ implementation.
 
 Packaging creates `sndocs-site.tar.gz`, `sndocs-site.zip`, and a SHA-256 file for each archive.
 The public packaging command and default full-current-family build remain available, but Cloudflare
-publication follows the [latest-with-archives deployment policy](docs/deployment-runbook.md). It
-builds only current latest, stores immutable family and release objects in private R2, serves them
-through a version-pinned Worker, and retains every family that was previously published as latest.
-The rolling `site-artifact` GitHub Release remains a host-agnostic recovery channel.
+publication follows the [latest-with-archives deployment policy](docs/deployment-runbook.md),
+executed from an operator workstation with no CI (see
+[ADR-0023](docs/adr/0023-publish-from-a-local-operator-workstation.md)). It builds only current
+latest, stores immutable family and release objects in private R2, serves them through a
+version-pinned Worker, and retains every family that was previously published as latest. The
+rolling `site-artifact` GitHub Release remains a host-agnostic recovery channel, updated by the
+operator through the same runbook.
 
 ## Configuration
 
 Edit `pipeline.toml` to set the site identity, canonical site URL, upstream repository and
-`llms.txt` path, optional family allowlist, and archive basename. Publication remains manual during
-the first two-release rollout; the runbook explains when and how to enable the daily schedule.
+`llms.txt` path, optional family allowlist, and archive basename. Publication is intentionally
+manual and operator-driven; the [runbook](docs/deployment-runbook.md) is the complete procedure.
 
 ## Licensing
 

@@ -4,7 +4,7 @@ title: Content components must not be unintentionally clipped
 status: active
 category: layout
 severity: warning
-assessment: automated
+assessment: manual
 references: []
 tags:
   - tables
@@ -40,11 +40,11 @@ table scroll width = 900px; table client width = 320px without an intentional sc
 
 ## Evaluation
 
-Chromium measures visible component scroll and client widths and records the element context.
+This rule has no automated browser detector; assess it manually with `sndocs serve`, inspecting representative tables and navigation regions at desktop and mobile widths as part of the preview checklist before promotion.
 
 ## Limitations
 
-Some accessible responsive tables intentionally scroll, so findings require review.
+Some accessible responsive tables intentionally scroll, so findings require review. Manual assessment covers only the pages reviewed during the checklist, not the full site.
 
 ## Remediation
 

@@ -4,7 +4,6 @@ import argparse
 import functools
 import http.server
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -177,8 +176,8 @@ def parser() -> argparse.ArgumentParser:
 
     audit_ui = commands.add_parser(
         "audit-ui",
-        help="find structural and rendered UI defects in a built site",
-        description="Scan every HTML page and render high-risk pages plus a deterministic sample.",
+        help="find structural UI defects in a built site",
+        description="Scan every HTML page with the static site-quality detectors.",
         epilog="Example:\n  sndocs audit-ui --site site --output ui-report",
         formatter_class=_Formatter,
     )
@@ -189,10 +188,8 @@ def parser() -> argparse.ArgumentParser:
         required=True,
         help="assembled production, smoke, or preview site",
     )
-    audit_ui.add_argument("--output", type=Path, required=True, help="HTML, JSON, and screenshot report directory")
+    audit_ui.add_argument("--output", type=Path, required=True, help="HTML and JSON report directory")
     audit_ui.add_argument("--clean", action="store_true", help="remove an existing report directory")
-    audit_ui.add_argument("--sample-size", type=int, default=100, help="additional pages to render (default: 100)")
-    audit_ui.add_argument("--seed", type=int, default=0, help="deterministic sampling seed (default: 0)")
 
     quality = commands.add_parser(
         "quality",
@@ -257,15 +254,6 @@ def _source_result(path: Path, settings, source) -> dict:
         "families": discovery_result.families,
         "status": "ok",
     }
-
-
-def _write_github_output(changed: bool, latest: str) -> None:
-    target = os.environ.get("GITHUB_OUTPUT")
-    if not target:
-        return
-    with Path(target).open("a", encoding="utf-8") as stream:
-        stream.write(f"changed={'true' if changed else 'false'}\n")
-        stream.write(f"latest={latest}\n")
 
 
 def _serve_site(site: Path, bind: str, port: int) -> None:
@@ -438,7 +426,6 @@ def _run(args: argparse.Namespace, argument_parser: argparse.ArgumentParser) -> 
             build_profile=build_profile,
             reuse_from=reuse_from,
         )
-        _write_github_output(changed, manifest["latest"])
         result = {
             "changed": changed,
             "latest": manifest["latest"],
@@ -499,14 +486,11 @@ def _run(args: argparse.Namespace, argument_parser: argparse.ArgumentParser) -> 
             argument_parser.error(f"output already exists: {output}; pass --clean to replace it")
         if output.exists():
             shutil.rmtree(output)
-        report = audit_site_ui(
-            site, output, sample_size=args.sample_size, seed=args.seed
-        )
+        report = audit_site_ui(site, output)
         result = {
             "site": str(site),
             "output": str(output),
             "findings": len(report["findings"]),
-            "errors": len(report["errors"]),
             "coverage": report["coverage"],
         }
         _emit(

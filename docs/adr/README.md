@@ -35,3 +35,5 @@ Accepted ADRs are immutable except for corrections and explicit supersession met
 - [ADR-0020: Configure the site header and UI brand](0020-configure-site-header-and-ui-brand.md)
 - [ADR-0021: Add a deterministic sampled preview](0021-add-deterministic-sampled-preview.md)
 - [ADR-0022: Publish latest with immutable Cloudflare releases](0022-publish-latest-with-cloudflare-releases.md)
+- [ADR-0023: Publish from a local operator workstation](0023-publish-from-a-local-operator-workstation.md)
+- [ADR-0024: Validate generated UI without a browser](0024-validate-generated-ui-without-a-browser.md)

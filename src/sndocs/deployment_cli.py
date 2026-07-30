@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -27,24 +26,16 @@ from .deployment import (
 
 
 def _read(path: Path | None) -> dict | None:
-    if path is None or not path.exists():
+    if path is None:
         return None
+    if not path.exists():
+        raise ValueError(f"required input is missing: {path}")
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _write(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
-
-
-def _github_outputs(values: dict[str, object]) -> None:
-    output = os.environ.get("GITHUB_OUTPUT")
-    if not output:
-        return
-    with Path(output).open("a", encoding="utf-8") as stream:
-        for key, value in values.items():
-            rendered = str(value).lower() if isinstance(value, bool) else str(value)
-            stream.write(f"{key}={rendered}\n")
 
 
 def parser() -> argparse.ArgumentParser:
@@ -57,7 +48,13 @@ def parser() -> argparse.ArgumentParser:
     plan = commands.add_parser("plan")
     plan.add_argument("--config", type=Path, default=Path("pipeline.toml"))
     plan.add_argument("--discovery", type=Path, required=True)
-    plan.add_argument("--active-release", type=Path)
+    plan_active = plan.add_mutually_exclusive_group(required=True)
+    plan_active.add_argument("--active-release", type=Path)
+    plan_active.add_argument(
+        "--no-active-release",
+        action="store_true",
+        help="plan an initial release; there is no live release to retain families from",
+    )
     plan.add_argument("--output", type=Path, required=True)
 
     inventory = commands.add_parser("inventory")
@@ -65,12 +62,23 @@ def parser() -> argparse.ArgumentParser:
     inventory.add_argument("--family", required=True)
     inventory.add_argument("--source-sha", required=True)
     inventory.add_argument("--pipeline-fingerprint", required=True)
+    inventory.add_argument(
+        "--recovery-archive",
+        type=Path,
+        help="recovery archive metadata written by the package subcommand",
+    )
     inventory.add_argument("--output", type=Path, required=True)
 
     assemble = commands.add_parser("assemble")
     assemble.add_argument("--site", type=Path, required=True)
     assemble.add_argument("--inventory", type=Path, required=True)
-    assemble.add_argument("--active-release", type=Path)
+    assemble_active = assemble.add_mutually_exclusive_group(required=True)
+    assemble_active.add_argument("--active-release", type=Path)
+    assemble_active.add_argument(
+        "--no-active-release",
+        action="store_true",
+        help="assemble an initial release; no archived families are retained",
+    )
     assemble.add_argument("--active-root", type=Path)
     assemble.add_argument("--output-root", type=Path, required=True)
     assemble.add_argument("--output-manifest", type=Path, required=True)
@@ -122,7 +130,6 @@ def _run(args: argparse.Namespace) -> dict:
             discovery, fingerprint, _read(args.active_release)
         )
         _write(args.output, result)
-        _github_outputs(result)
         return result
 
     if args.command == "inventory":
@@ -131,6 +138,7 @@ def _run(args: argparse.Namespace) -> dict:
             args.family,
             args.source_sha,
             args.pipeline_fingerprint,
+            recovery_archive=_read(args.recovery_archive),
         )
         _write(args.output, result)
         return result
@@ -146,12 +154,6 @@ def _run(args: argparse.Namespace) -> dict:
             args.active_root,
         )
         _write(args.output_manifest, result)
-        _github_outputs(
-            {
-                "release_id": result["release_id"],
-                "root_prefix": result["root_prefix"],
-            }
-        )
         return result
 
     if args.command == "validate":

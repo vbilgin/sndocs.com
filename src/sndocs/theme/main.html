@@ -21,3 +21,23 @@
     <script type="module" src="{{ 'pagefind/pagefind-component-ui.js' | url }}"></script>
   {% endif %}
 {% endblock %}
+
+{#
+  Material 9.7's base.html has no sub-block inside the article it renders, so
+  the container block is duplicated here only to add data-pagefind-body. This
+  makes the search boundary an explicit, portable data attribute instead of
+  the .md-content__inner Material CSS class Pagefind's --root-selector
+  previously depended on.
+#}
+{% block container %}
+  <div class="md-content" data-md-component="content">
+    {% if "navigation.path" in features %}
+      {% include "partials/path.html" %}
+    {% endif %}
+    <article class="md-content__inner md-typeset" data-pagefind-body>
+      {% block content %}
+        {% include "partials/content.html" %}
+      {% endblock %}
+    </article>
+  </div>
+{% endblock %}

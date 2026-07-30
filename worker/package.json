@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "check": "wrangler deploy --dry-run --env preview && wrangler deploy --dry-run --env production"
+    "check": "wrangler deploy --dry-run --env preview && wrangler deploy --dry-run --env production",
+    "deploy:preview": "wrangler deploy --env preview --message 'Bootstrap sndocs preview'",
+    "deploy:production": "node scripts/require-release-id.mjs && wrangler deploy --env production --var DEPLOYMENT_MODE:production --var RELEASE_ID:$RELEASE_ID"
   },
   "devDependencies": {
     "wrangler": "4.114.0"

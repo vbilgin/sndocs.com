@@ -214,6 +214,33 @@ test("preview reads its pointer and adds no-index headers", async () => {
   assert.equal(response.headers.get("x-robots-tag"), "noindex, nofollow");
 });
 
+test("production pins its release and never reads a pointer", async () => {
+  const env = environment("production", RELEASE);
+  env.SITE_BUCKET.objects.set("pointers/production.json", {
+    body: JSON.stringify({ release_id: OTHER_RELEASE }),
+    options: { contentType: "application/json" },
+  });
+
+  const response = await request("/zurich/", {}, env);
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-sndocs-release"), RELEASE);
+  const pointerReads = env.SITE_BUCKET.gets.filter((key) =>
+    key.startsWith("pointers/"),
+  );
+  assert.deepEqual(pointerReads, []);
+});
+
+test("the bootstrap sentinel fails closed rather than serving a wrong release", async () => {
+  const env = environment("production", RELEASE);
+  env.RELEASE_ID = "BOOTSTRAP_REQUIRED";
+
+  const response = await request("/zurich/", {}, env);
+
+  assert.equal(response.status, 503);
+  assert.equal(response.headers.get("x-sndocs-release"), "unavailable");
+});
+
 test("cache keys separate identical paths across releases", async () => {
   const keys = [];
   const cache = {

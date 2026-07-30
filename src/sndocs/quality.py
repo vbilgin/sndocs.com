@@ -105,18 +105,10 @@ class QualityRuleset:
 DEFAULT_DETECTORS = (
     Detector("static.visible-markdown-link", "SND-RENDER-001", "static", "high"),
     Detector("static.suspicious-link-label", "SND-RENDER-001", "static", "medium"),
-    Detector("browser.visible-markdown-link", "SND-RENDER-001", "browser", "high"),
     Detector("static.visible-markdown-escape", "SND-RENDER-002", "static", "medium"),
-    Detector("browser.visible-markdown-escape", "SND-RENDER-002", "browser", "medium"),
     Detector("static.duplicate-navigation-entry", "SND-NAV-001", "static", "medium"),
-    Detector("browser.duplicate-navigation-entry", "SND-NAV-001", "browser", "high"),
     Detector("static.raw-markdown-destination", "SND-LINK-001", "static", "high"),
     Detector("static.missing-local-target", "SND-LINK-002", "static", "high"),
-    Detector("browser.horizontal-page-overflow", "SND-LAYOUT-001", "browser", "high"),
-    Detector("browser.clipped-content", "SND-LAYOUT-002", "browser", "medium"),
-    Detector("browser.page-error", "SND-FUNC-001", "browser", "high"),
-    Detector("browser.console-error", "SND-FUNC-002", "browser", "medium"),
-    Detector("browser.failed-resource", "SND-LINK-003", "browser", "high"),
 )
 
 

@@ -1,14 +1,9 @@
 from __future__ import annotations
 
-import functools
-import hashlib
 import html
-import http.server
 import json
 import posixpath
-import random
 import re
-import threading
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -23,10 +18,6 @@ from .quality import QualityRuleset, load_quality_ruleset
 MARKDOWN_LINK_RE = re.compile(r"\[[^\]\n]{1,200}\]\([^) \n]+(?:\s+[^)\n]+)?\)")
 ESCAPED_TEXT_RE = re.compile(r"\\[()[\]_*]")
 RAW_MARKDOWN_HREF_RE = re.compile(r"(?:^|/)[^?#]+\.md(?:[?#]|$)", re.IGNORECASE)
-VIEWPORTS = {
-    "desktop": {"width": 1440, "height": 900},
-    "mobile": {"width": 390, "height": 844},
-}
 AUDIT_SECTION_RE = re.compile(
     r"<(?P<tag>table|nav)\b[^>]*>.*?</(?P=tag)\s*>", re.IGNORECASE | re.DOTALL
 )
@@ -87,8 +78,6 @@ class Observation:
     message: str
     context: str
     representative_url: str
-    viewport: str | None = None
-    screenshot: str | None = None
     affected_pages: set[str] = field(default_factory=set)
 
     def to_dict(self) -> dict:
@@ -99,15 +88,13 @@ class Observation:
             "context": self.context,
             "representative_url": self.representative_url,
             "affected_page_count": len(self.affected_pages),
-            "viewport": self.viewport,
-            "screenshot": self.screenshot,
         }
 
 
 class FindingStore:
     def __init__(self, ruleset: QualityRuleset) -> None:
         self.ruleset = ruleset
-        self._observations: dict[tuple[str, str, str, str | None], Observation] = {}
+        self._observations: dict[tuple[str, str, str], Observation] = {}
 
     def add(
         self,
@@ -116,15 +103,13 @@ class FindingStore:
         context: str,
         page_url: str,
         *,
-        viewport: str | None = None,
-        screenshot: str | None = None,
         fingerprint: str | None = None,
     ) -> Observation:
         detector = self.ruleset.detectors.get(detector_id)
         if detector is None:
             raise ValueError(f"unknown quality detector: {detector_id}")
         normalized = _normalized_text(context)[:500]
-        key = (detector_id, fingerprint or normalized, message, viewport)
+        key = (detector_id, fingerprint or normalized, message)
         observation = self._observations.get(key)
         if observation is None:
             observation = Observation(
@@ -133,17 +118,10 @@ class FindingStore:
                 message,
                 normalized,
                 page_url,
-                viewport,
-                screenshot,
             )
             self._observations[key] = observation
         observation.affected_pages.add(page_url)
-        if screenshot and not observation.screenshot:
-            observation.screenshot = screenshot
         return observation
-
-    def representative_urls(self) -> set[str]:
-        return {item.representative_url for item in self._observations.values()}
 
     def findings(self) -> list[dict]:
         severity_order = {"error": 0, "warning": 1, "info": 2}
@@ -158,7 +136,6 @@ class FindingStore:
                 observations,
                 key=lambda item: (
                     item.detector_id,
-                    item.viewport or "",
                     item.representative_url,
                     item.context,
                 ),
@@ -186,16 +163,10 @@ class FindingStore:
 @dataclass
 class StaticAudit:
     pages: list[str]
-    high_risk_pages: set[str]
-    table_pages: set[str]
-    nav_pages: set[str]
 
 
 def structural_audit(site: Path, findings: FindingStore) -> StaticAudit:
     pages: list[str] = []
-    high_risk: set[str] = set()
-    table_pages: set[str] = set()
-    nav_pages: set[str] = set()
     all_files = {
         "/" + path.relative_to(site).as_posix()
         for path in site.rglob("*")
@@ -207,10 +178,6 @@ def structural_audit(site: Path, findings: FindingStore) -> StaticAudit:
         pages.append(page_url)
         source = page.read_text(encoding="utf-8", errors="replace")
         sections = list(AUDIT_SECTION_RE.finditer(source))
-        if any(match.group("tag").casefold() == "table" for match in sections):
-            table_pages.add(page_url)
-        if any(match.group("tag").casefold() == "nav" for match in sections):
-            nav_pages.add(page_url)
         for section in sections:
             section_source = section.group(0)
             prose_source = NON_PROSE_RE.sub(" ", section_source)
@@ -294,210 +261,7 @@ def structural_audit(site: Path, findings: FindingStore) -> StaticAudit:
                     label,
                     page_url,
                 )
-    high_risk.update(findings.representative_urls())
-    return StaticAudit(pages, high_risk, table_pages, nav_pages)
-
-
-def select_pages(audit: StaticAudit, sample_size: int, seed: int) -> list[str]:
-    if sample_size < 0:
-        raise ValueError("--sample-size cannot be negative")
-    selected = set(audit.high_risk_pages)
-    candidates = sorted(set(audit.pages) - selected)
-    randomizer = random.Random(seed)
-    selected.update(randomizer.sample(candidates, min(sample_size, len(candidates))))
-    return sorted(selected)
-
-
-class _QuietHandler(http.server.SimpleHTTPRequestHandler):
-    def log_message(self, format: str, *args) -> None:
-        return
-
-
-def _screenshot_name(page_url: str, viewport: str, rule: str) -> str:
-    digest = hashlib.sha256(f"{page_url}|{viewport}|{rule}".encode()).hexdigest()[:12]
-    return f"{viewport}-{rule}-{digest}.png"
-
-
-def browser_audit(
-    site: Path,
-    output: Path,
-    pages: list[str],
-    findings: FindingStore,
-    errors: list[str],
-) -> int:
-    try:
-        from playwright.sync_api import Error as PlaywrightError
-        from playwright.sync_api import sync_playwright
-    except ImportError as error:
-        raise RuntimeError(
-            "UI audit requires the optional dependency; install .[ui] and run "
-            '`playwright install chromium`'
-        ) from error
-    handler = functools.partial(_QuietHandler, directory=str(site))
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    screenshots = output / "screenshots"
-    screenshots.mkdir(parents=True, exist_ok=True)
-    rendered = 0
-    try:
-        with sync_playwright() as playwright:
-            try:
-                browser = playwright.chromium.launch(headless=True)
-            except PlaywrightError as error:
-                raise RuntimeError(
-                    "Chromium is unavailable; run `playwright install chromium`"
-                ) from error
-            try:
-                base_url = f"http://127.0.0.1:{server.server_port}"
-                for page_url in pages:
-                    for viewport_name, viewport in VIEWPORTS.items():
-                        context = browser.new_context(viewport=viewport)
-                        page = context.new_page()
-                        page_errors: list[str] = []
-                        console_errors: list[str] = []
-                        failed_resources: list[str] = []
-                        page.on("pageerror", lambda error: page_errors.append(str(error)))
-                        page.on(
-                            "console",
-                            lambda message: console_errors.append(message.text)
-                            if message.type == "error"
-                            else None,
-                        )
-                        page.on(
-                            "requestfailed",
-                            lambda request: failed_resources.append(request.url),
-                        )
-                        page.on(
-                            "response",
-                            lambda response: failed_resources.append(
-                                f"{response.status} {response.url}"
-                            )
-                            if response.status >= 400
-                            else None,
-                        )
-                        try:
-                            page.goto(base_url + page_url, wait_until="networkidle", timeout=30_000)
-                            rendered += 1
-                            result = page.evaluate(
-                                """() => {
-                                  const visible = e => {
-                                    const s = getComputedStyle(e);
-                                    const r = e.getBoundingClientRect();
-                                    return s.display !== "none" && s.visibility !== "hidden" &&
-                                      r.width > 0 && r.height > 0;
-                                  };
-                                  const selectors = "table, .md-content, .md-typeset";
-                                  const clipped = [...document.querySelectorAll(selectors)]
-                                    .filter(visible)
-                                    .filter(e => ["hidden", "clip"].includes(getComputedStyle(e).overflowX))
-                                    .filter(e => e.scrollWidth > e.clientWidth + 2)
-                                    .map(e => ({
-                                      tag: e.tagName.toLowerCase(),
-                                      className: e.className || "",
-                                      scrollWidth: e.scrollWidth,
-                                      clientWidth: e.clientWidth
-                                    }));
-                                  const prose = document.body.cloneNode(true);
-                                  prose.querySelectorAll("pre, code, script, style").forEach(e => e.remove());
-                                  const proseText = prose.innerText;
-                                  const insideScroller = e => {
-                                    for (let p = e.parentElement; p; p = p.parentElement) {
-                                      if (["auto", "scroll"].includes(getComputedStyle(p).overflowX))
-                                        return true;
-                                    }
-                                    return false;
-                                  };
-                                  const viewportOverflow = [...document.body.querySelectorAll("*")]
-                                    .filter(visible)
-                                    .filter(e => !e.closest("nav, .md-top"))
-                                    .filter(e => getComputedStyle(e).position !== "fixed")
-                                    .filter(e => !insideScroller(e))
-                                    .some(e => {
-                                      const r = e.getBoundingClientRect();
-                                      return r.right > document.documentElement.clientWidth + 2 ||
-                                        r.left < -2;
-                                    });
-                                  const markdown = proseText.match(/\\[[^\\]\\n]{1,200}\\]\\([^)\\s]+(?:\\s+[^)\\n]+)?\\)/g) || [];
-                                  const escapes = [...document.querySelectorAll("nav a")]
-                                    .map(e => e.innerText.trim())
-                                    .filter(t => /\\\\[()[\\]_*]/.test(t));
-                                  const duplicates = [];
-                                  for (const list of document.querySelectorAll("nav ul")) {
-                                    const seen = new Map();
-                                    for (const link of list.querySelectorAll(":scope > li > a")) {
-                                      if (!visible(link)) continue;
-                                      const key = link.innerText.trim().toLowerCase() + "|" + link.href;
-                                      if (seen.has(key)) duplicates.push(link.innerText.trim());
-                                      seen.set(key, true);
-                                    }
-                                  }
-                                  return {
-                                    documentOverflow: viewportOverflow,
-                                    clipped, markdown, escapes, duplicates
-                                  };
-                                }"""
-                            )
-                            detected: list[tuple[str, str, str]] = []
-                            if result["documentOverflow"]:
-                                detected.append((
-                                    "browser.horizontal-page-overflow",
-                                    "The page is wider than its viewport.", "document"
-                                ))
-                            for item in result["clipped"]:
-                                detected.append((
-                                    "browser.clipped-content",
-                                    "A visible table, navigation, or content container overflows horizontally.",
-                                    json.dumps(item, sort_keys=True),
-                                ))
-                            for item in result["markdown"]:
-                                detected.append((
-                                    "browser.visible-markdown-link",
-                                    "The browser exposes Markdown link syntax.", item
-                                ))
-                            for item in result["escapes"]:
-                                detected.append((
-                                    "browser.visible-markdown-escape",
-                                    "The browser exposes Markdown escape syntax in navigation.", item
-                                ))
-                            for item in result["duplicates"]:
-                                detected.append((
-                                    "browser.duplicate-navigation-entry",
-                                    "Visible sibling navigation entries are duplicated.", item
-                                ))
-                            for item in page_errors:
-                                detected.append(("browser.page-error", "A page error occurred.", item))
-                            for item in console_errors:
-                                detected.append(("browser.console-error", "The console logged an error.", item))
-                            for item in failed_resources:
-                                detected.append(("browser.failed-resource", "A browser resource failed to load.", item))
-                            if detected:
-                                first_detector = detected[0][0]
-                                filename = _screenshot_name(page_url, viewport_name, first_detector)
-                                page.screenshot(path=str(screenshots / filename))
-                                relative_shot = f"screenshots/{filename}"
-                                for detector_id, message, detail in detected:
-                                    findings.add(
-                                        detector_id,
-                                        message,
-                                        detail,
-                                        page_url,
-                                        viewport=viewport_name,
-                                        screenshot=relative_shot,
-                                    )
-                        except PlaywrightError as error:
-                            errors.append(f"{page_url} ({viewport_name}): {error}")
-                        finally:
-                            context.close()
-            except PlaywrightError as error:
-                raise RuntimeError(f"Chromium audit failed: {error}") from error
-            finally:
-                browser.close()
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=5)
-    return rendered
+    return StaticAudit(pages)
 
 
 def _report_html(report: dict, ruleset: QualityRuleset) -> str:
@@ -505,23 +269,13 @@ def _report_html(report: dict, ruleset: QualityRuleset) -> str:
     for finding in report["findings"]:
         observations = []
         for observation in finding["observations"]:
-            screenshot = (
-                f'<p><a href="{html.escape(observation["screenshot"])}">View screenshot</a></p>'
-                if observation["screenshot"]
-                else ""
-            )
-            viewport = (
-                f' · {html.escape(observation["viewport"])}'
-                if observation["viewport"]
-                else ""
-            )
             observations.append(
                 f'<section class="observation"><h3>{html.escape(observation["detector_id"])}</h3>'
                 f'<p><strong>Confidence: {html.escape(observation["confidence"])}</strong>'
-                f'{viewport} · {observation["affected_page_count"]} affected page(s)</p>'
+                f' · {observation["affected_page_count"]} affected page(s)</p>'
                 f'<p>{html.escape(observation["message"])}</p>'
                 f'<p><code>{html.escape(observation["representative_url"])}</code></p>'
-                f'<pre>{html.escape(observation["context"])}</pre>{screenshot}</section>'
+                f'<pre>{html.escape(observation["context"])}</pre></section>'
             )
         rule = ruleset.rules[finding["rule_id"]]
         cards.append(
@@ -543,7 +297,6 @@ def _report_html(report: dict, ruleset: QualityRuleset) -> str:
         f"({html.escape(rule.assessment)})</li>"
         for rule in unevaluated
     )
-    errors = "".join(f"<li>{html.escape(item)}</li>" for item in report["errors"])
     return f"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -556,22 +309,22 @@ article.error{{border-left:.35rem solid #d7263d}}article.warning{{border-left:.3
 pre{{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f1ed;padding:.75rem}}a{{color:#6a4cff}}
 </style>
 <header><h1>sndocs UI audit</h1>
-<p>{report["coverage"]["html_pages"]} HTML pages scanned; {report["coverage"]["browser_renders"]} browser renders; {len(report["findings"])} rule finding(s).</p>
+<p>{report["coverage"]["html_pages"]} HTML pages scanned; {len(report["findings"])} rule finding(s).</p>
 <p>Ruleset <code>{html.escape(report["ruleset"]["digest"])}</code></p>
 </header>
 <section>{"".join(cards) or "<p>No findings.</p>"}</section>
 <section><h2>Active rules not automatically evaluated</h2><ul>{unevaluated_html or "<li>None</li>"}</ul></section>
-<section><h2>Audit errors</h2><ul>{errors or "<li>None</li>"}</ul></section>
 """
 
 
-def audit_site_ui(
-    site: Path,
-    output: Path,
-    *,
-    sample_size: int = 100,
-    seed: int = 0,
-) -> dict:
+def audit_site_ui(site: Path, output: Path) -> dict:
+    """Scan every generated HTML page with the static detectors.
+
+    This is a structural audit only: it reads the assembled site and writes a
+    separate report, but never renders a browser. Findings never fail the
+    command. See ADR-0024 for why browser-based checks were withdrawn and what
+    replaces their coverage.
+    """
     if _audit_paths_overlap(site, output):
         raise ValueError(f"audit output must not overlap input site: {output}")
     manifest_path = site / "build-manifest.json"
@@ -581,19 +334,11 @@ def audit_site_ui(
     ruleset = load_quality_ruleset()
     findings = FindingStore(ruleset)
     static = structural_audit(site, findings)
-    selected = select_pages(static, sample_size, seed)
     output.mkdir(parents=True)
-    errors: list[str] = []
-    browser_renders = browser_audit(site, output, selected, findings, errors)
     report = {
-        "schema_version": 2,
+        "schema_version": 3,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "site": str(site),
-        "configuration": {
-            "sample_size": sample_size,
-            "seed": seed,
-            "viewports": VIEWPORTS,
-        },
         "ruleset": {
             "schema_version": ruleset.schema_version,
             "package_version": __version__,
@@ -603,12 +348,8 @@ def audit_site_ui(
         },
         "coverage": {
             "html_pages": len(static.pages),
-            "high_risk_pages": len(static.high_risk_pages),
-            "selected_pages": len(selected),
-            "browser_renders": browser_renders,
         },
         "findings": findings.findings(),
-        "errors": errors,
     }
     (output / "findings.json").write_text(
         json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
