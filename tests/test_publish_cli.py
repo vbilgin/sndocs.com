@@ -469,6 +469,43 @@ def test_promote_rolls_back_and_leaves_the_pointer_alone_on_failure(
     assert publish_cli.PRODUCTION_POINTER_KEY not in client.objects
 
 
+def test_promote_reports_both_failures_when_rollback_also_fails(
+    tmp_path, capsys, monkeypatch
+):
+    client = FakeR2()
+    candidate = _candidate(tmp_path, client, None)
+    capsys.readouterr()
+    invoked = []
+
+    def fake_tool(argv, *, cwd, description):
+        invoked.append(description)
+        if description == "deployment verification":
+            raise publish_cli.PublishError("release header mismatch")
+        if description == "wrangler rollback":
+            raise publish_cli.PublishError(
+                "Could not find stable Worker Version to rollback to"
+            )
+
+    monkeypatch.setattr(publish_cli, "_run_tool", fake_tool)
+
+    status = publish_cli.main(
+        ["promote", "--candidate", str(candidate), "--i-reviewed-preview"],
+        client=client,
+    )
+
+    assert status == 2
+    error = capsys.readouterr().err
+    assert "release header mismatch" in error
+    assert "Could not find stable Worker Version to rollback to" in error
+    assert "first production deployment" in error
+    assert invoked == [
+        "wrangler deploy",
+        "deployment verification",
+        "wrangler rollback",
+    ]
+    assert publish_cli.PRODUCTION_POINTER_KEY not in client.objects
+
+
 def test_promote_pins_the_release_id_from_the_manifest(tmp_path, capsys, monkeypatch):
     client = FakeR2()
     candidate = _candidate(tmp_path, client, None)
@@ -531,6 +568,50 @@ def test_recovery_manifest_orders_checksums_by_name(tmp_path, capsys):
     reconstruction = json.loads((candidate / "reconstruction.json").read_text())
     assert reconstruction["families"]["zurich"]["name"] == "sndocs-zurich.tar.gz"
     assert reconstruction["families_without_recovery"] == []
+
+
+def test_recovery_manifest_prints_a_create_release_guard_before_upload_commands(
+    tmp_path, capsys
+):
+    client = FakeR2()
+    candidate = _candidate(tmp_path, client, None)
+    assert (
+        publish_cli.main(
+            ["push-candidate", "--candidate", str(candidate)], client=client
+        )
+        == 0
+    )
+    assets = tmp_path / "release-assets"
+    assets.mkdir()
+    (assets / "sndocs-zurich.tar.gz").write_bytes(b"data")
+    capsys.readouterr()
+
+    assert (
+        publish_cli.main(
+            [
+                "recovery-manifest",
+                "--candidate",
+                str(candidate),
+                "--assets",
+                str(assets),
+                "--print-upload-commands",
+            ],
+            client=client,
+        )
+        == 0
+    )
+
+    error = capsys.readouterr().err
+    lines = error.splitlines()
+    assert lines[0] == "gh release view site-artifact >/dev/null 2>&1 || \\"
+    assert '--title "Latest sndocs.com recovery artifacts"' in error
+    assert (
+        '--notes "Rolling recovery metadata and immutable per-family archives '
+        'for sndocs.com."' in error
+    )
+    assert error.index("gh release create site-artifact") < error.index(
+        "gh release delete-asset site-artifact"
+    )
 
 
 def test_cleanup_is_plan_only_and_refuses_to_apply_without_a_rollback(

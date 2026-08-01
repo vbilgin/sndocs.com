@@ -18,7 +18,7 @@ Build an independent versioned MkDocs mirror of `ServiceNow/ServiceNowDocs`.
 - `r2.py` wraps the `aws` CLI for all R2 I/O; `publish_cli.py`, the only module with irreversible side effects, orchestrates `r2.py`, `deployment.py`, `wrangler`, and `verify_deployment.py` per the runbook.
 - `worker/` contains the tested Cloudflare Worker and preview/production Wrangler environments bound privately to `sndocs-production`.
 - `quality.py` validates packaged rules; `ui_audit.py` now applies only static detectors. Five rules (overflow, clipping, page/console errors, failed resources) are `assessment: manual`, checked by hand against `sndocs serve`.
-- Publication has no CI; the operator runs `publish_cli`, gated by `promote --i-reviewed-preview`. `pointers/production.json` in R2 records what is live; the Worker never reads it.
+- Publication has no CI; the operator runs `publish_cli`, gated by `promote --i-reviewed-preview`; `pointers/production.json` in R2 records what is live, unread by the Worker.
 
 The `sndocs` 0.2 CLI manages the pipeline; `audit-ui` and `quality` expose report-only audits and human-readable rules.
 
@@ -55,15 +55,15 @@ Public packaging still produces `sndocs-site.tar.gz`, `sndocs-site.zip`, and SHA
 
 ## Current status
 
-- Australia Pagefind indexes 49,089 pages in 124.9 MiB, down from 222.0 MiB; `data-pagefind-body` reproduces this scoping without the Material selector (verified structurally; not yet re-measured on a full build).
+- Australia Pagefind indexes 49,089 pages in 124.9 MiB, down from 222.0 MiB; `data-pagefind-body` reproduces this scoping without the Material selector (structurally verified, not re-measured).
 - The deterministic Australia preview samples 159 of 48,989 Markdown files across all 55 top-level areas; minified production/smoke HTML is 46.4% smaller.
 - Artifact validation rejects missing roots, invalid search output, or unrewritten source links. UI audits remain report-only.
 - Release planning, root assembly, sharded recovery, retention cleanup, and Worker routing/cache/header behavior are implemented and locally tested.
-- GitHub Actions and Playwright are both gone. Publication is a manual, operator-run sequence not yet exercised against the live bucket; `audit-ui` is static-only, with SND-LAYOUT-001/002 and SND-FUNC-001/002 assessed manually per the preview checklist.
+- GitHub Actions and Playwright are both gone; `audit-ui` is static-only, with SND-LAYOUT-001/002 and SND-FUNC-001/002 assessed manually per the preview checklist. The local publish runbook (ADR-0023) first ran against the live bucket on 2026-08-01, promoting `sndocs.com`; two `publish_cli` gaps and two runbook doc gaps were fixed (`.agent/WORKLOG.md`).
 
 ## Known gaps and risks
 
-- Production publication, apex certificates, rollback, and recovery reconstruction remain unproven under `publish_cli`.
+- Steady-state rollback and recovery reconstruction remain unproven under `publish_cli`.
 - Manual preview validation can miss regressions an automated pass would catch; this is the accepted permanent design, not a gap to close.
 - Full families remain large — Australia has roughly 49,000 pages, 4.03 GiB — with 20 stale-anchor diagnostics at MkDocs' informational level, left informational by intent.
 - Cross-family links can still go stale when topics move between directories in different release branches.
@@ -71,7 +71,7 @@ Public packaging still produces `sndocs-site.tar.gz`, `sndocs-site.zip`, and SHA
 
 ## Next likely work
 
-1. Run one real publication end to end with `publish_cli` against a scratch R2 prefix before touching the live bucket.
+1. Exercise steady-state rollback and `deployment_cli reconstruct` recovery now that a real release exists, closing the gaps above.
 2. Replace `transform.py`'s regex layer with a parser-based segmenter, add real upstream fixtures, and make well-formedness a validation gate.
 3. Time-box a Zensical spike against the seven documented criteria once the transform rewrite lands; do not merge it into that work.
 

@@ -15,3 +15,9 @@ previous-site/
 site-australia/
 artifacts-australia/
 .DS_Store
+
+# publish_cli runbook working directories (docs/deployment-runbook.md)
+state/
+handoff/
+candidate/
+release-assets/

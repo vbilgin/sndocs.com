@@ -370,13 +370,25 @@ def promote(args, client: R2Client) -> dict:
     ]
     try:
         _run_tool(verify, cwd=None, description="deployment verification")
-    except PublishError as error:
-        _run_tool(
-            ["npx", "wrangler", "rollback", "--env", "production", "--yes"],
-            cwd=args.worker_dir,
-            description="wrangler rollback",
-        )
-        raise PublishError(f"{error}; production was rolled back") from error
+    except PublishError as verify_error:
+        try:
+            _run_tool(
+                ["npx", "wrangler", "rollback", "--env", "production", "--yes"],
+                cwd=args.worker_dir,
+                description="wrangler rollback",
+            )
+        except PublishError as rollback_error:
+            raise PublishError(
+                f"deployment verification failed ({verify_error}), and the "
+                f"automatic rollback also failed ({rollback_error}). If this is "
+                "the first production deployment, wrangler cannot roll back "
+                "because no prior stable Worker version exists yet — that is "
+                "expected. Manually verify the live site before retrying, e.g. "
+                f"`curl -sSI {args.base_url}` and confirm X-Sndocs-Release."
+            ) from rollback_error
+        raise PublishError(
+            f"{verify_error}; production was rolled back"
+        ) from verify_error
 
     # Only now is this release live.
     client.put_bytes(
@@ -425,6 +437,10 @@ def _upload_commands(args, release: dict, reconstruction: dict, assets) -> str:
     latest = release["latest"]
     archive = reconstruction["families"][latest]["name"]
     lines = [
+        "gh release view site-artifact >/dev/null 2>&1 || \\\n"
+        '  gh release create site-artifact \\\n'
+        '    --title "Latest sndocs.com recovery artifacts" \\\n'
+        '    --notes "Rolling recovery metadata and immutable per-family archives for sndocs.com."',
         "# Replace the changed family's assets, then refresh the rolling files:",
         f"gh release delete-asset site-artifact {archive} --yes || true",
     ]

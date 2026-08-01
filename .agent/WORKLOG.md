@@ -4,11 +4,38 @@ Reverse-chronological record of significant project work. This is a historical i
 
 Older entries are archived in [.agent/worklog/2026-H2.md](worklog/2026-H2.md).
 
+## 2026-08-01 — Exercise the local publish runbook against the live bucket for the first time
+
+- **Work performed by:** Claude, with direction from Victor Bilgin
+- **Branch:** `simplify/local-publish-no-browser`
+- **Commit:** Pending
+
+### Outcome
+
+Walked `docs/deployment-runbook.md` end to end for the first time since publication moved off CI, publishing a real release to `sndocs.com` and proving out apex TLS and first-time production promotion. Two `publish_cli.py` gaps and two runbook documentation gaps surfaced along the way; all four are now fixed, two with regression tests.
+
+### Changes and decisions
+
+- `resolve_active`'s bootstrap branch (no prior `pointers/production.json`) never writes `--output` — there is nothing to write. The runbook's cleanup step unconditionally passed `--rollback state/release-manifest.json`, so a first publication failed with `required input is missing`. Added a "first publication only: omit --rollback" callout to step 10 of `docs/deployment-runbook.md`, matching the existing callouts on steps 3 and 6.
+- The runbook's Preflight section never stated that `--source ../ServiceNowDocs` requires a pre-existing local clone; added a bullet pointing at `sndocs source clone`/`source check` (documented separately in CLAUDE.md's Pipeline CLI section) so a fresh operator machine doesn't hit `local source is not a Git working tree`.
+- `_upload_commands()` in `publish_cli.py` assumed the `site-artifact` GitHub Release already existed; the deleted CI workflow's create-if-missing guard (`gh release view || gh release create`) never carried over during the 2026-07-29 migration. Restored it as the first printed command.
+- `promote()`'s rollback-on-verification-failure path had no handling for the rollback itself failing — hit live when the first Worker deployment's post-deploy HTTP verification failed on transient DNS propagation immediately after the custom-domain route was created, and Wrangler then refused to roll back ("Could not find stable Worker Version") since no prior version exists on a first deployment. `promote()` now catches that second failure and raises one combined error naming both failures and explaining that "no prior version" is expected on a first deployment, rather than surfacing Wrangler's raw error. No retry/backoff was added for the underlying transient verification failure — deferred by explicit decision, since it is expected to be specific to first-ever custom-domain route creation rather than steady-state publication.
+- Added `state/`, `handoff/`, `candidate/`, and `release-assets/` — the runbook's own local working directories — to `.gitignore`; they were previously untracked but unignored.
+- Corrected this file's prior entry, which still read `Commit: Pending` after having actually shipped as `f4cc9a2`.
+
+### Verification
+
+- `.venv/bin/pytest`: full suite passed, including two new tests (`test_recovery_manifest_prints_a_create_release_guard_before_upload_commands`, `test_promote_reports_both_failures_when_rollback_also_fails`).
+- `git diff --check` passed on `docs/deployment-runbook.md`.
+- The real publication succeeded: `curl -sSI https://sndocs.com/` returns `200` with `X-Sndocs-Release` matching the promoted release ID; `pointers/production.json` was written on a second `promote` run after the first hit the rollback gap above and exited non-zero without writing it.
+- Did not exercise steady-state rollback (an actual prior version to fall back to) or GitHub Release recovery reconstruction (`deployment_cli reconstruct`) — both remain unproven and are recorded in `.agent/CONTEXT.md`.
+- `.agent/CONTEXT.md` is within its 150-line/1,000-word budget (78 lines, 998 words).
+
 ## 2026-07-29 — Move publication off CI and remove browser-based UI validation
 
 - **Work performed by:** Claude, with direction from Victor Bilgin
 - **Branch:** `simplify/local-publish-no-browser`
-- **Commit:** Pending (`Move publication off CI and remove browser-based UI validation` intended subject)
+- **Commit:** `f4cc9a2` — `Move publication off CI and remove browser-based UI validation`
 
 ### Outcome
 

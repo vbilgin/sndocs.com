@@ -2,7 +2,7 @@
 
 `sndocs audit-ui` is diagnostic: it reads an assembled site and writes a separate report, but it does not repair pages, invoke a build, or make findings fatal. Keep the report directory separate from the audited site. The command rejects equal, nested, and parent output paths so `--clean` cannot alter the input site.
 
-This workflow implements [ADR-0017](adr/0017-remediate-ui-findings-at-source.md).
+This workflow implements [ADR-0017](adr/0017-remediate-ui-findings-at-source.md). `audit-ui` itself is static-only ([ADR-0024](adr/0024-validate-generated-ui-without-a-browser.md)): overflow, clipping, uncaught page/console errors, and failed resource loads (`SND-LAYOUT-001/002`, `SND-FUNC-001/002`, `SND-LINK-003`) have no detector and are `assessment: manual`, checked by hand with `sndocs serve` as part of the preview checklist, not by this command.
 
 ## Triage before changing code
 
@@ -15,7 +15,6 @@ Start from the finding's stable rule ID, representative URL, detector context, s
 | Shared overflow, clipping, or interaction defect | Theme CSS, JavaScript, or template |
 | Missing generated resource | MkDocs configuration, asset reference, or assembly |
 | Detector false positive | Detector and detector fixture; leave the generated site unchanged |
-| Browser startup, timeout, or environment problem | Audit setup or audit error handling; leave the generated site unchanged |
 
 Fix the earliest responsible layer. Do not edit generated Markdown or HTML, and do not add a generic post-build repair pass. Preserve upstream wording and attribution; any recovery for malformed input must remain deterministic and auditable.
 
@@ -49,4 +48,4 @@ After accepting a rendering-pipeline correction, run the normal production build
 
 ## Verification
 
-Run focused tests, then `.venv/bin/pytest`. Audit the affected family at both built-in viewports and confirm the targeted observation is absent without regressions in related rules. Search and production-asset corrections require a production-profile diagnostic. Before release, complete the all-family production build and strict artifact validation. If validation stops at a diagnostic family because a full build is intentionally deferred, record that skipped integration check and its remaining risk.
+Run focused tests, then `.venv/bin/pytest`. Audit the affected family with `sndocs audit-ui` and confirm the targeted observation is absent without regressions in other static rules; for the five manually assessed rules, open representative pages with `sndocs serve` at desktop and mobile widths per the preview checklist. Search and production-asset corrections require a production-profile diagnostic. Before release, complete the all-family production build and strict artifact validation. If validation stops at a diagnostic family because a full build is intentionally deferred, record that skipped integration check and its remaining risk.

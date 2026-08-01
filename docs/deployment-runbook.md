@@ -17,6 +17,7 @@ Before a rollout, confirm:
 - an AWS CLI v2 profile (for example `sndocs-r2`) is configured locally with a bucket-scoped R2 access key and secret;
 - `SNDOCS_R2_BUCKET`, `CLOUDFLARE_ACCOUNT_ID`, and `AWS_PROFILE` are exported in your shell (`r2.py` fails closed if the first two are unset);
 - `CLOUDFLARE_API_TOKEN` is exported for `wrangler`, scoped to edit Workers scripts, versions, deployments, and routes for this account and zone, and nothing else;
+- a clean local clone of the upstream repo exists at `../ServiceNowDocs`, created once with `.venv/bin/sndocs source clone ../ServiceNowDocs && .venv/bin/sndocs source check ../ServiceNowDocs` (see CLAUDE.md's "Pipeline CLI" section) — steps 2 and 4 below pass `--source ../ServiceNowDocs` and fail if it is missing;
 - `gh` is authenticated locally with permission to manage releases on this repository;
 - the `$5` and `$15` Cloudflare budget notifications still reach the operator; and
 - `node` and `npm` are available for the Worker's tests and `wrangler` invocations.
@@ -118,6 +119,8 @@ cp candidate/recovery/assets/* release-assets/
 # 10. guarded cleanup — plan-only by default; --apply requires a rollback release
 .venv/bin/python -m sndocs.publish_cli cleanup \
   --candidate candidate --rollback state/release-manifest.json
+#   first publication only: omit --rollback — resolve-active never wrote
+#   state/release-manifest.json in the bootstrap case, so there is nothing to pass
 #   review the plan, then re-run with --apply once satisfied
 ```
 
