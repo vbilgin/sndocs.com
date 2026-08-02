@@ -12,10 +12,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
 import subprocess
 import sys
+import tempfile
+import types
 from pathlib import Path
 
+from .artifacts import validate_site
+from .builder import build_site
+from .config import load_settings
 from .deployment import (
     DEFAULT_PART_SIZE,
     ROOT_FILES,
@@ -23,8 +30,10 @@ from .deployment import (
     assemble_candidate,
     build_family_inventory,
     build_reconstruction,
+    calculate_pipeline_fingerprint,
     create_deterministic_archive,
     plan_cleanup,
+    plan_latest_release,
     preview_pointer,
     production_pointer,
     recovery_checksum_manifest,
@@ -35,7 +44,9 @@ from .deployment import (
     verify_uploaded_inventory,
     verify_uploaded_tree,
 )
+from .discovery import discover
 from .r2 import R2Client, R2Config, R2Error
+from .source import LocalSource
 
 PRODUCTION_POINTER_KEY = "pointers/production.json"
 PREVIEW_POINTER_KEY = "pointers/preview.json"
@@ -93,6 +104,20 @@ def _upload_immutable_tree(
             ) from error
         raise PublishError(f"upload verification failed for {prefix}: {error}") from error
     return {"prefix": prefix, "objects": len(existing), "reused": reused}
+
+
+def _require_clean_workspace(paths: list[Path], clean: bool) -> None:
+    existing = [path for path in paths if path.exists()]
+    if not existing:
+        return
+    if not clean:
+        joined = ", ".join(str(path) for path in existing)
+        raise PublishError(
+            f"stale working directories from a prior run exist: {joined}; "
+            "pass --clean to remove them first"
+        )
+    for path in existing:
+        shutil.rmtree(path)
 
 
 def _package_recovery(
@@ -322,6 +347,105 @@ def push_candidate(args, client: R2Client) -> dict:
     }
 
 
+def stage(args, client: R2Client) -> dict:
+    """Run preflight, then discovery through push-candidate, in one command."""
+    _run_tool([sys.executable, "-m", "pytest"], cwd=None, description="pytest")
+    _run_tool(
+        ["npm", "test", "--prefix", "worker"], cwd=None, description="worker tests"
+    )
+    _run_tool(
+        ["npm", "run", "check", "--prefix", "worker"],
+        cwd=None,
+        description="wrangler dry-run check",
+        env={
+            **os.environ,
+            "XDG_CONFIG_HOME": "/tmp/sndocs-wrangler",
+            "WRANGLER_LOG_PATH": "/tmp/sndocs-wrangler.log",
+        },
+    )
+
+    _require_clean_workspace([args.state, args.handoff, args.candidate, args.site], args.clean)
+
+    # The bootstrap safety gate runs before any discovery or build work, both
+    # so a missing pointer fails fast and so the single --allow-bootstrap flag
+    # here is the only place this decision is made for the whole run.
+    resolve_ns = types.SimpleNamespace(
+        output=args.state / "release-manifest.json",
+        github_manifest=None,
+        allow_bootstrap=args.allow_bootstrap,
+    )
+    resolved = resolve_active(resolve_ns, client)
+    bootstrap = resolved["state"] == "bootstrap"
+    # resolve_active never writes --output in the bootstrap case; there is
+    # nothing to read back.
+    active_release_path = None if bootstrap else resolve_ns.output
+    active_release = None if bootstrap else json.loads(active_release_path.read_bytes())
+
+    settings = load_settings(args.config)
+    source_repository = LocalSource(args.source, settings)
+
+    full_discovery = discover(settings, source_repository)
+    _write_json(args.state / "discovery.json", full_discovery.to_dict())
+
+    fingerprint = calculate_pipeline_fingerprint(args.config)
+    deployment_plan = plan_latest_release(full_discovery.to_dict(), fingerprint, active_release)
+    _write_json(args.state / "deployment-plan.json", deployment_plan)
+
+    latest = deployment_plan["latest"]
+    latest_discovery = discover(settings, source_repository, (latest,))
+
+    temporary_root = Path.cwd() / ".temp"
+    temporary_root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="sndocs-", dir=temporary_root) as work:
+        build_site(
+            settings,
+            args.site,
+            Path(work),
+            None,
+            source_repository,
+            latest_discovery,
+            build_profile="production",
+            cleanup_work=True,
+        )
+    validate_site(args.site)
+
+    push_family(
+        types.SimpleNamespace(
+            site=args.site,
+            plan=args.state / "deployment-plan.json",
+            handoff=args.handoff,
+            part_size=args.part_size,
+        ),
+        client,
+    )
+    assemble(
+        types.SimpleNamespace(
+            site=args.site,
+            inventory=args.handoff / "family-inventory.json",
+            candidate=args.candidate,
+            active_release=active_release_path,
+        ),
+        client,
+    )
+    pushed = push_candidate(
+        types.SimpleNamespace(candidate=args.candidate, part_size=args.part_size), client
+    )
+
+    print(
+        f"{PREVIEW_CHECKLIST}\nCandidate release: {pushed['release_id']}\n"
+        "Preview: https://preview.sndocs.com/\n"
+        "Once the checklist above passes, run "
+        f"`promote --candidate {args.candidate} --i-reviewed-preview`.",
+        file=sys.stderr,
+    )
+    return {
+        "release_id": pushed["release_id"],
+        "latest": latest,
+        "bootstrap": bootstrap,
+        "candidate": str(args.candidate),
+    }
+
+
 PREVIEW_CHECKLIST = """
 Manual preview review (this flag is the only record that it happened):
   1. Open the preview root and the latest-family landing page.
@@ -427,30 +551,83 @@ def recovery_manifest(args, client: R2Client) -> dict:
     }
     if args.print_upload_commands:
         print(
-            _upload_commands(args, release, reconstruction, assets),
+            _format_upload_commands(_upload_command_plan(args, release, reconstruction, assets)),
             file=sys.stderr,
         )
     return result
 
 
-def _upload_commands(args, release: dict, reconstruction: dict, assets) -> str:
+def _upload_command_plan(
+    args, release: dict, reconstruction: dict, assets
+) -> list[tuple[list[str] | None, str]]:
+    """Return (argv, description) pairs; argv is None for a shell-only comment."""
     latest = release["latest"]
     archive = reconstruction["families"][latest]["name"]
+    plan: list[tuple[list[str] | None, str]] = [
+        (
+            [
+                "gh",
+                "release",
+                "create",
+                "site-artifact",
+                "--title",
+                "Latest sndocs.com recovery artifacts",
+                "--notes",
+                "Rolling recovery metadata and immutable per-family archives for sndocs.com.",
+            ],
+            "create the site-artifact release",
+        ),
+        (None, "Replace the changed family's assets, then refresh the rolling files:"),
+        (
+            ["gh", "release", "delete-asset", "site-artifact", archive, "--yes"],
+            "delete-asset (best-effort; the asset may not exist yet)",
+        ),
+    ]
+    for path in assets:
+        plan.append(
+            (
+                ["gh", "release", "upload", "site-artifact", str(path), "--clobber"],
+                f"upload {path.name}",
+            )
+        )
+    for name in ("reconstruction.json", "recovery-assets.sha256", "release-manifest.json"):
+        plan.append(
+            (
+                [
+                    "gh",
+                    "release",
+                    "upload",
+                    "site-artifact",
+                    str(args.candidate / name),
+                    "--clobber",
+                ],
+                f"upload {name}",
+            )
+        )
+    return plan
+
+
+def _format_upload_commands(plan: list[tuple[list[str] | None, str]]) -> str:
     lines = [
         "gh release view site-artifact >/dev/null 2>&1 || \\\n"
         '  gh release create site-artifact \\\n'
         '    --title "Latest sndocs.com recovery artifacts" \\\n'
-        '    --notes "Rolling recovery metadata and immutable per-family archives for sndocs.com."',
-        "# Replace the changed family's assets, then refresh the rolling files:",
-        f"gh release delete-asset site-artifact {archive} --yes || true",
+        '    --notes "Rolling recovery metadata and immutable per-family archives for sndocs.com."'
     ]
-    for path in assets:
-        lines.append(f"gh release upload site-artifact {path} --clobber")
-    for name in ("reconstruction.json", "recovery-assets.sha256", "release-manifest.json"):
-        lines.append(
-            f"gh release upload site-artifact {args.candidate / name} --clobber"
-        )
+    for argv, description in plan[1:]:
+        if argv is None:
+            lines.append(f"# {description}")
+        elif argv[2] == "delete-asset":
+            lines.append(" ".join(argv) + " || true")
+        else:
+            lines.append(" ".join(argv))
     return "\n".join(lines)
+
+
+def _gh_release_exists(name: str) -> bool:
+    return subprocess.run(
+        ["gh", "release", "view", name], capture_output=True
+    ).returncode == 0
 
 
 def cleanup(args, client: R2Client) -> dict:
@@ -507,6 +684,61 @@ def cleanup(args, client: R2Client) -> dict:
     }
 
 
+def finish(args, client: R2Client) -> dict:
+    """Write the recovery manifest, push it to GitHub, and plan cleanup."""
+    _require_clean_workspace([args.assets], args.clean)
+    args.assets.mkdir(parents=True, exist_ok=True)
+    for source in (args.handoff / "recovery" / "assets", args.candidate / "recovery" / "assets"):
+        if not source.is_dir():
+            raise PublishError(f"{source} is missing; run stage before finish")
+        for path in sorted(source.iterdir()):
+            if path.is_file():
+                shutil.copy2(path, args.assets / path.name)
+
+    recovery = recovery_manifest(
+        types.SimpleNamespace(
+            candidate=args.candidate, assets=args.assets, print_upload_commands=False
+        ),
+        client,
+    )
+    release = _read_json(args.candidate / "release-manifest.json")
+    reconstruction = _read_json(args.candidate / "reconstruction.json")
+    assets = sorted(path for path in args.assets.rglob("*") if path.is_file())
+    plan = _upload_command_plan(args, release, reconstruction, assets)
+
+    create_argv, _create_description = plan[0]
+    gh_commands: list[str] = []
+    if not _gh_release_exists("site-artifact"):
+        _run_tool(create_argv, cwd=None, description="gh release create")
+        gh_commands.append(" ".join(create_argv))
+    for argv, description in plan[1:]:
+        if argv is None:
+            continue
+        if description.startswith("delete-asset"):
+            try:
+                _run_tool(argv, cwd=None, description=description)
+            except PublishError:
+                pass
+        else:
+            _run_tool(argv, cwd=None, description=description)
+        gh_commands.append(" ".join(argv))
+
+    cleanup_result = cleanup(
+        types.SimpleNamespace(
+            candidate=args.candidate,
+            rollback=args.rollback,
+            apply=False,
+            allow_missing_recovery=args.allow_missing_recovery,
+        ),
+        client,
+    )
+    return {
+        "recovery": recovery,
+        "gh_commands": gh_commands,
+        "cleanup_plan": cleanup_result,
+    }
+
+
 def _parse_timestamp(value: str):
     from datetime import datetime
 
@@ -532,8 +764,10 @@ def _write_batches(plan: dict, destination: Path) -> list[Path]:
     return written
 
 
-def _run_tool(argv: list[str], *, cwd: Path | None, description: str) -> None:
-    completed = subprocess.run(argv, cwd=cwd)
+def _run_tool(
+    argv: list[str], *, cwd: Path | None, description: str, env: dict[str, str] | None = None
+) -> None:
+    completed = subprocess.run(argv, cwd=cwd, env=env)
     if completed.returncode != 0:
         raise PublishError(f"{description} failed with exit status {completed.returncode}")
 
@@ -547,6 +781,20 @@ def parser() -> argparse.ArgumentParser:
         description="Publish an sndocs.com release from an operator workstation",
     )
     commands = result.add_subparsers(dest="command", required=True)
+
+    stage_command = commands.add_parser(
+        "stage",
+        help="run preflight, then discovery through push-candidate, in one command",
+    )
+    stage_command.add_argument("--source", type=Path, required=True)
+    stage_command.add_argument("--config", type=Path, default=Path("pipeline.toml"))
+    stage_command.add_argument("--state", type=Path, default=Path("state"))
+    stage_command.add_argument("--handoff", type=Path, default=Path("handoff"))
+    stage_command.add_argument("--candidate", type=Path, default=Path("candidate"))
+    stage_command.add_argument("--site", type=Path, default=Path("site"))
+    stage_command.add_argument("--allow-bootstrap", action="store_true")
+    stage_command.add_argument("--clean", action="store_true")
+    stage_command.add_argument("--part-size", type=int, default=DEFAULT_PART_SIZE)
 
     active = commands.add_parser(
         "resolve-active", help="record which release is currently live"
@@ -602,10 +850,21 @@ def parser() -> argparse.ArgumentParser:
     prune.add_argument("--rollback", type=Path)
     prune.add_argument("--apply", action="store_true")
     prune.add_argument("--allow-missing-recovery", action="store_true")
+
+    finish_command = commands.add_parser(
+        "finish", help="write the recovery manifest, push it to GitHub, and plan cleanup"
+    )
+    finish_command.add_argument("--candidate", type=Path, default=Path("candidate"))
+    finish_command.add_argument("--handoff", type=Path, default=Path("handoff"))
+    finish_command.add_argument("--assets", type=Path, default=Path("release-assets"))
+    finish_command.add_argument("--rollback", type=Path)
+    finish_command.add_argument("--allow-missing-recovery", action="store_true")
+    finish_command.add_argument("--clean", action="store_true")
     return result
 
 
 HANDLERS = {
+    "stage": stage,
     "resolve-active": resolve_active,
     "push-family": push_family,
     "assemble-candidate": assemble,
@@ -613,6 +872,7 @@ HANDLERS = {
     "promote": promote,
     "recovery-manifest": recovery_manifest,
     "cleanup": cleanup,
+    "finish": finish,
 }
 
 

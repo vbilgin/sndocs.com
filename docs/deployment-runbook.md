@@ -17,7 +17,7 @@ Before a rollout, confirm:
 - an AWS CLI v2 profile (for example `sndocs-r2`) is configured locally with a bucket-scoped R2 access key and secret;
 - `SNDOCS_R2_BUCKET`, `CLOUDFLARE_ACCOUNT_ID`, and `AWS_PROFILE` are exported in your shell (`r2.py` fails closed if the first two are unset);
 - `CLOUDFLARE_API_TOKEN` is exported for `wrangler`, scoped to edit Workers scripts, versions, deployments, and routes for this account and zone, and nothing else;
-- a clean local clone of the upstream repo exists at `../ServiceNowDocs`, created once with `.venv/bin/sndocs source clone ../ServiceNowDocs && .venv/bin/sndocs source check ../ServiceNowDocs` (see CLAUDE.md's "Pipeline CLI" section) — steps 2 and 4 below pass `--source ../ServiceNowDocs` and fail if it is missing;
+- a clean local clone of the upstream repo exists at `../ServiceNowDocs`, created once with `.venv/bin/sndocs source clone ../ServiceNowDocs && .venv/bin/sndocs source check ../ServiceNowDocs` (see CLAUDE.md's "Pipeline CLI" section) — `stage` below passes it on as `--source ../ServiceNowDocs` and fails if it is missing;
 - `gh` is authenticated locally with permission to manage releases on this repository;
 - the `$5` and `$15` Cloudflare budget notifications still reach the operator; and
 - `node` and `npm` are available for the Worker's tests and `wrangler` invocations.
@@ -33,22 +33,24 @@ npm test --prefix worker
 XDG_CONFIG_HOME=/tmp/sndocs-wrangler WRANGLER_LOG_PATH=/tmp/sndocs-wrangler.log npm run check --prefix worker
 ```
 
+`stage` (below) also runs these three automatically, every time, before touching any state — running them here by hand first is only useful as a faster fail-fast check right after a code change, before committing to a full `stage` run.
+
 ## First preview bootstrap
 
 The first candidate must exist before preview can resolve its pointer, while the preview Worker must exist before the operator can review that candidate:
 
-1. Run the normal publication steps below through `push-candidate`. `resolve-active` will refuse to run without `--allow-bootstrap` the first time, because `pointers/production.json` does not exist yet.
+1. Run `stage --source ../ServiceNowDocs --allow-bootstrap` (see Normal publication below). It refuses to run without `--allow-bootstrap` the first time, because `pointers/production.json` does not exist yet.
 2. Deploy the preview Worker: `npm run deploy:preview --prefix worker`.
 3. Confirm Cloudflare issued the `preview.sndocs.com` certificate and that the hostname returns `X-Robots-Tag: noindex, nofollow`.
-4. Complete the manual preview checklist below, then run `promote`.
+4. Complete the manual preview checklist `stage` printed, then run `promote`.
 
-If preview diagnosis requires a code correction, fix it, rerun the affected steps from `push-family` onward, and discard the earlier candidate; do not promote a candidate built from a different source than the one you reviewed.
+If preview diagnosis requires a code correction, fix it, rerun `stage --clean` and discard the earlier candidate — or, for a narrower rerun, use the individual fine-grained subcommands from `push-family` onward (see the end of Normal publication below). Do not promote a candidate built from a different source than the one you reviewed.
 
 The bootstrap Worker deployment is also the recovery path if a Worker service is deleted. `npm run deploy:preview --prefix worker` only needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. `npm run deploy:production --prefix worker` additionally requires `RELEASE_ID` to already be set to a verified, currently-published release; it refuses to run otherwise (`worker/scripts/require-release-id.mjs`). Do not run it unless the specified release manifest and all referenced R2 objects have already been verified.
 
 ## Normal publication
 
-Run every step below manually, in order, from the repository root.
+`stage` and `finish` wrap the fine-grained subcommands below into the two mechanical halves of a publication. Run every step below, in order, from the repository root.
 
 ```sh
 # 0. environment (once per shell)
@@ -57,74 +59,40 @@ export CLOUDFLARE_ACCOUNT_ID=<id>
 export SNDOCS_R2_BUCKET=sndocs-production
 export CLOUDFLARE_API_TOKEN=<token>            # wrangler only
 
-# 1. tests
-.venv/bin/pytest
-npm test --prefix worker
-XDG_CONFIG_HOME=/tmp/sndocs-wrangler WRANGLER_LOG_PATH=/tmp/sndocs-wrangler.log npm run check --prefix worker
-
-# 2. discovery and the fail-closed active release
-mkdir -p state
-.venv/bin/sndocs discover --source ../ServiceNowDocs --json > state/discovery.json
-.venv/bin/python -m sndocs.publish_cli resolve-active --output state/release-manifest.json
+# 1. preflight, discovery, build, validate, and candidate assembly
+.venv/bin/python -m sndocs.publish_cli stage --source ../ServiceNowDocs
 #   first publication only: add --allow-bootstrap
-
-# 3. plan — pass --no-active-release only on the first publication
-.venv/bin/python -m sndocs.deployment_cli plan \
-  --discovery state/discovery.json \
-  --active-release state/release-manifest.json \
-  --output state/deployment-plan.json
-LATEST=$(python3 -c "import json;print(json.load(open('state/deployment-plan.json'))['latest'])")
-
-# 4. build and strictly validate the latest family only
-.venv/bin/sndocs build --output site --source ../ServiceNowDocs --family "$LATEST"
-.venv/bin/sndocs validate --site site
-
-# 5. package, inventory with recovery metadata, immutably upload, verify
-.venv/bin/python -m sndocs.publish_cli push-family \
-  --site site --plan state/deployment-plan.json --handoff handoff
-
-# 6. assemble the candidate root, retaining archived families from the active release
-.venv/bin/python -m sndocs.publish_cli assemble-candidate \
-  --site site --inventory handoff/family-inventory.json \
-  --active-release state/release-manifest.json --candidate candidate
-#   first publication only: replace the line above with --no-active-release
-
-# 7. upload the candidate root, the manifest, and the preview pointer
-.venv/bin/python -m sndocs.publish_cli push-candidate --candidate candidate
+#   rerunning after a stopped or corrected attempt: add --clean
 ```
 
-Before approving production, complete the manual preview checklist:
+`stage` runs `.venv/bin/pytest`, `npm test --prefix worker`, and the wrangler dry-run check first, every time; then discovery, the fail-closed active-release check (the single `--allow-bootstrap` flag above is the only place that decision is made), the build, validation, and candidate assembly and upload — all in one command. It ends by printing the manual preview checklist and the candidate release ID.
+
+Before approving production, complete that checklist:
 
 - open the preview root and latest-family page at `https://preview.sndocs.com/`;
 - confirm navigation and a representative documentation page load;
 - run a basic Pagefind search and open a result;
 - open representative pages at desktop and mobile widths and confirm no horizontal overflow, clipped tables, uncaught page errors, console errors, or failed resource loads — this is now the only check for [SND-LAYOUT-001/002 and SND-FUNC-001/002](../src/sndocs/quality_rules/rules/), per [ADR-0024](adr/0024-validate-generated-ui-without-a-browser.md);
-- confirm `X-Sndocs-Release` matches the candidate release ID printed by `push-candidate`; and
+- confirm `X-Sndocs-Release` matches the candidate release ID `stage` printed; and
 - confirm `X-Robots-Tag: noindex, nofollow`.
 
 ```sh
-# 8. promote — refuses without --i-reviewed-preview, reads RELEASE_ID from the
+# 2. promote — refuses without --i-reviewed-preview, reads RELEASE_ID from the
 #    manifest (never an argument), deploys, verifies over HTTP, rolls back
 #    automatically on failure, and writes pointers/production.json last
 .venv/bin/python -m sndocs.publish_cli promote --candidate candidate --i-reviewed-preview
 
-# 9. recovery metadata, then the printed gh commands
-mkdir -p release-assets
-cp handoff/recovery/assets/* release-assets/
-cp candidate/recovery/assets/* release-assets/
-.venv/bin/python -m sndocs.publish_cli recovery-manifest \
-  --candidate candidate --assets release-assets --print-upload-commands
-#   run the printed `gh release upload` / `gh release delete-asset` commands
-
-# 10. guarded cleanup — plan-only by default; --apply requires a rollback release
-.venv/bin/python -m sndocs.publish_cli cleanup \
-  --candidate candidate --rollback state/release-manifest.json
+# 3. recovery manifest, gh upload, and a cleanup plan
+.venv/bin/python -m sndocs.publish_cli finish --rollback state/release-manifest.json
 #   first publication only: omit --rollback — resolve-active never wrote
 #   state/release-manifest.json in the bootstrap case, so there is nothing to pass
-#   review the plan, then re-run with --apply once satisfied
 ```
 
-`promote` is the only step that changes what production serves. Every step before it only writes to R2 prefixes that are either brand new or already immutable; every step after it is recovery bookkeeping and cleanup, neither of which affects what is currently live.
+`finish` copies the recovery assets `stage` produced, writes and uploads the reconstruction manifest and checksums to the `site-artifact` GitHub Release (creating it first if it doesn't exist yet), and writes — but never applies — a cleanup plan. Review `candidate/cleanup-plan.json`, then run `cleanup --apply` separately (below) once satisfied.
+
+`promote` is the only step that changes what production serves. `stage` only writes to R2 prefixes that are either brand new or already immutable; `finish` is recovery bookkeeping and a cleanup plan, neither of which affects what is currently live.
+
+Every step `stage` and `finish` wrap is also available individually — `resolve-active`, `push-family`, `assemble-candidate`, `push-candidate`, `recovery-manifest`, and `cleanup --apply` — for diagnosis or a narrower rerun after a partial failure. Run `.venv/bin/python -m sndocs.publish_cli <command> --help` for each one's flags; their behavior is unchanged from before `stage`/`finish` existed.
 
 ## Preview and production diagnosis
 
@@ -184,11 +152,11 @@ The result is host-agnostic and can be uploaded to another static host. Never re
 
 ## Credential rotation
 
-For R2 credentials, create a replacement bucket-scoped read/write key, update your local AWS profile, run a no-change publication plan (steps 1–2 above) plus a read-only bucket listing (`aws s3api list-objects-v2 --bucket sndocs-production --max-items 1`), and then revoke the old key. For the Worker token, create the replacement least-privilege token, export it as `CLOUDFLARE_API_TOKEN`, run both Wrangler dry runs (`npm run check --prefix worker`), redeploy preview only if a deploy test is required, and then revoke the old token. Never print credentials or place them in repository files, shell history you intend to keep, workflow artifacts, Worker variables, or release metadata.
+For R2 credentials, create a replacement bucket-scoped read/write key, update your local AWS profile, and verify it with the individual commands — not `stage`, so a bad key can't cascade through a full build: `.venv/bin/python -m sndocs.publish_cli resolve-active --output /tmp/active-release-check.json` to confirm read access, plus a read-only bucket listing (`aws s3api list-objects-v2 --bucket sndocs-production --max-items 1`), and then revoke the old key. For the Worker token, create the replacement least-privilege token, export it as `CLOUDFLARE_API_TOKEN`, run both Wrangler dry runs (`npm run check --prefix worker`), redeploy preview only if a deploy test is required, and then revoke the old token. Never print credentials or place them in repository files, shell history you intend to keep, workflow artifacts, Worker variables, or release metadata.
 
 ## Cleanup
 
-Cleanup is separate from publication logic even though it runs as the last step of the same manual sequence. It always writes `candidate/cleanup-plan.json` before deletion, whether or not `--apply` is passed. The first successful publication is dry-run only because no rollback release exists yet, and `cleanup` itself refuses `--apply` without one.
+Cleanup is separate from publication logic even though `finish` runs it as the last step of the same sequence. It always writes `candidate/cleanup-plan.json` before deletion, whether or not `--apply` is passed — `finish` itself never passes `--apply`. The first successful publication is dry-run only because no rollback release exists yet, and `cleanup` itself refuses `--apply` without one.
 
 For later publications, cleanup may delete only objects that are unreferenced and older than 14 days, and it requires that every protected release's family records carry recovery metadata (`require_recovery=True` by default) — pass `--allow-missing-recovery` only for a release published before recovery metadata was recorded. It must refuse to select:
 

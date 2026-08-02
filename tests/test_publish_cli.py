@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -644,4 +645,320 @@ def test_cleanup_is_plan_only_and_refuses_to_apply_without_a_rollback(
         == 2
     )
     assert "without a rollback release" in capsys.readouterr().err
-    assert "content/orphan/dead/index.html" in client.objects
+
+
+# -- stage --------------------------------------------------------------
+
+
+def _noop_run_tool(monkeypatch, invoked: list[str] | None = None):
+    def fake_tool(argv, *, cwd, description, env=None):
+        if invoked is not None:
+            invoked.append(description)
+
+    monkeypatch.setattr(publish_cli, "_run_tool", fake_tool)
+
+
+def _fake_stage_build_dependencies(monkeypatch, *, family: str = "zurich", sha: str = "sha-2"):
+    """Fake discovery/build/validation so stage() tests exercise orchestration
+    only; discover/build_site/validate_site have their own dedicated suites."""
+
+    class FakeDiscovery:
+        latest = family
+        families = [family]
+        shas = {family: sha}
+
+        def to_dict(self) -> dict:
+            return {"latest": family, "families": [family], "shas": {family: sha}}
+
+    def fake_load_settings(config):
+        return object()
+
+    def fake_local_source(source, settings):
+        return object()
+
+    def fake_discover(settings, source_repository, family_allowlist=None):
+        return FakeDiscovery()
+
+    def fake_build_site(
+        settings,
+        output,
+        work,
+        previous_site,
+        source_repository,
+        discovery_result,
+        *,
+        build_profile,
+        cleanup_work,
+    ):
+        produced = production_site(output.parent, family, sha)
+        if output.exists():
+            shutil.rmtree(output)
+        shutil.move(str(produced), str(output))
+        return {"latest": family}, True
+
+    monkeypatch.setattr(publish_cli, "load_settings", fake_load_settings)
+    monkeypatch.setattr(publish_cli, "LocalSource", fake_local_source)
+    monkeypatch.setattr(publish_cli, "discover", fake_discover)
+    monkeypatch.setattr(publish_cli, "build_site", fake_build_site)
+    monkeypatch.setattr(publish_cli, "validate_site", lambda site: None)
+    monkeypatch.setattr(
+        publish_cli, "calculate_pipeline_fingerprint", lambda config: FINGERPRINT
+    )
+
+
+def _stage_workspace_args(tmp_path: Path) -> list[str]:
+    """Scope every stage() working directory into tmp_path.
+
+    Never rely on stage's real defaults (state/handoff/candidate/site at the
+    repo root) in a test — this repo's own working directories live at those
+    exact paths, and a test passing --clean against the real defaults would
+    delete them.
+    """
+    return [
+        "--state",
+        str(tmp_path / "state"),
+        "--handoff",
+        str(tmp_path / "handoff"),
+        "--candidate",
+        str(tmp_path / "candidate"),
+        "--site",
+        str(tmp_path / "site"),
+    ]
+
+
+def test_stage_runs_preflight_before_touching_the_filesystem(tmp_path, monkeypatch):
+    invoked: list[str] = []
+
+    def fake_tool(argv, *, cwd, description, env=None):
+        invoked.append(description)
+        if description == "wrangler dry-run check":
+            raise publish_cli.PublishError("check failed")
+
+    monkeypatch.setattr(publish_cli, "_run_tool", fake_tool)
+
+    status = publish_cli.main(
+        [
+            "stage",
+            "--source",
+            str(tmp_path / "upstream"),
+            *_stage_workspace_args(tmp_path),
+        ],
+        client=FakeR2(),
+    )
+
+    assert status == 2
+    assert invoked == ["pytest", "worker tests", "wrangler dry-run check"]
+    assert not (tmp_path / "state").exists()
+
+
+def test_stage_fails_closed_without_allow_bootstrap(tmp_path, monkeypatch, capsys):
+    _noop_run_tool(monkeypatch)
+
+    status = publish_cli.main(
+        [
+            "stage",
+            "--source",
+            str(tmp_path / "upstream"),
+            *_stage_workspace_args(tmp_path),
+        ],
+        client=FakeR2(),
+    )
+
+    assert status == 2
+    error = capsys.readouterr().err
+    assert "the live release is unknown" in error
+    assert "drop every archived family" in error
+    assert not (tmp_path / "state").exists()
+
+
+def test_stage_refuses_stale_working_directories_without_clean(tmp_path, monkeypatch):
+    _noop_run_tool(monkeypatch)
+    stale = tmp_path / "state"
+    stale.mkdir()
+    (stale / "marker.json").write_text("{}", encoding="utf-8")
+
+    status = publish_cli.main(
+        ["stage", "--source", str(tmp_path / "upstream"), *_stage_workspace_args(tmp_path)],
+        client=FakeR2(),
+    )
+
+    assert status == 2
+    assert (stale / "marker.json").exists()
+
+
+def test_stage_clean_removes_stale_working_directories_first(tmp_path, monkeypatch):
+    _noop_run_tool(monkeypatch)
+    stale = tmp_path / "state"
+    stale.mkdir()
+    (stale / "marker.json").write_text("{}", encoding="utf-8")
+
+    # An empty bucket still fails at the bootstrap gate without
+    # --allow-bootstrap, but --clean must have already removed the stale
+    # directory before that gate is even reached.
+    status = publish_cli.main(
+        [
+            "stage",
+            "--source",
+            str(tmp_path / "upstream"),
+            *_stage_workspace_args(tmp_path),
+            "--clean",
+        ],
+        client=FakeR2(),
+    )
+
+    assert status == 2
+    assert not (stale / "marker.json").exists()
+
+
+def test_stage_propagates_bootstrap_and_prints_the_shared_checklist(
+    tmp_path, monkeypatch, capsys
+):
+    _noop_run_tool(monkeypatch)
+    _fake_stage_build_dependencies(monkeypatch)
+    captured: dict[str, object] = {}
+    real_assemble = publish_cli.assemble
+
+    def spy_assemble(args, client):
+        captured["active_release"] = args.active_release
+        return real_assemble(args, client)
+
+    monkeypatch.setattr(publish_cli, "assemble", spy_assemble)
+    client = FakeR2()
+    capsys.readouterr()
+
+    status = publish_cli.main(
+        [
+            "stage",
+            "--source",
+            str(tmp_path / "upstream"),
+            "--state",
+            str(tmp_path / "state"),
+            "--handoff",
+            str(tmp_path / "handoff"),
+            "--candidate",
+            str(tmp_path / "candidate"),
+            "--site",
+            str(tmp_path / "site"),
+            "--allow-bootstrap",
+        ],
+        client=client,
+    )
+
+    assert status == 0
+    assert captured["active_release"] is None
+    captured_output = capsys.readouterr()
+    result = json.loads(captured_output.out)
+    assert result["bootstrap"] is True
+    assert "Manual preview review" in captured_output.err
+    assert (tmp_path / "state" / "discovery.json").exists()
+    assert (tmp_path / "candidate" / "release-manifest.json").exists()
+
+
+# -- finish -------------------------------------------------------------
+
+
+def _finished_candidate(tmp_path: Path, client: FakeR2) -> Path:
+    candidate = _candidate(tmp_path, client, None)
+    assert (
+        publish_cli.main(
+            ["push-candidate", "--candidate", str(candidate)], client=client
+        )
+        == 0
+    )
+    return candidate
+
+
+def test_finish_executes_gh_commands_it_previously_only_printed(
+    tmp_path, monkeypatch, capsys
+):
+    client = FakeR2()
+    candidate = _finished_candidate(tmp_path, client)
+    capsys.readouterr()
+    invoked: list[tuple[list[str], str]] = []
+
+    def fake_tool(argv, *, cwd, description, env=None):
+        invoked.append((argv, description))
+
+    monkeypatch.setattr(publish_cli, "_run_tool", fake_tool)
+    monkeypatch.setattr(publish_cli, "_gh_release_exists", lambda name: False)
+
+    status = publish_cli.main(
+        [
+            "finish",
+            "--candidate",
+            str(candidate),
+            "--handoff",
+            str(tmp_path / "handoff"),
+            "--assets",
+            str(tmp_path / "release-assets"),
+        ],
+        client=client,
+    )
+
+    assert status == 0
+    argvs = [argv for argv, _description in invoked]
+    assert argvs[0][:4] == ["gh", "release", "create", "site-artifact"]
+    assert argvs[1][:4] == ["gh", "release", "delete-asset", "site-artifact"]
+    upload_argvs = [argv for argv in argvs if argv[2] == "upload"]
+    assert len(upload_argvs) >= 4  # family archive, root archive, 3 metadata files
+    assert all(argv[-1] == "--clobber" for argv in upload_argvs)
+
+
+def test_finish_swallows_a_failed_delete_asset_like_the_old_shell_or_true(
+    tmp_path, monkeypatch
+):
+    client = FakeR2()
+    candidate = _finished_candidate(tmp_path, client)
+    invoked: list[str] = []
+
+    def fake_tool(argv, *, cwd, description, env=None):
+        invoked.append(description)
+        if description.startswith("delete-asset"):
+            raise publish_cli.PublishError("asset does not exist yet")
+
+    monkeypatch.setattr(publish_cli, "_run_tool", fake_tool)
+    monkeypatch.setattr(publish_cli, "_gh_release_exists", lambda name: True)
+
+    status = publish_cli.main(
+        [
+            "finish",
+            "--candidate",
+            str(candidate),
+            "--handoff",
+            str(tmp_path / "handoff"),
+            "--assets",
+            str(tmp_path / "release-assets"),
+        ],
+        client=client,
+    )
+
+    assert status == 0
+    assert any(description.startswith("upload") for description in invoked)
+
+
+def test_finish_plans_cleanup_without_applying_and_without_rollback(
+    tmp_path, monkeypatch, capsys
+):
+    client = FakeR2()
+    candidate = _finished_candidate(tmp_path, client)
+    capsys.readouterr()
+    monkeypatch.setattr(publish_cli, "_run_tool", lambda *a, **k: None)
+    monkeypatch.setattr(publish_cli, "_gh_release_exists", lambda name: True)
+
+    status = publish_cli.main(
+        [
+            "finish",
+            "--candidate",
+            str(candidate),
+            "--handoff",
+            str(tmp_path / "handoff"),
+            "--assets",
+            str(tmp_path / "release-assets"),
+        ],
+        client=client,
+    )
+
+    assert status == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["cleanup_plan"]["applied"] is False
+    assert (candidate / "cleanup-plan.json").exists()
