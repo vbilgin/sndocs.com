@@ -17,6 +17,16 @@ Repository state is authoritative over documentation. Report conflicts rather th
 
 Prose convention in all repository Markdown: keep each paragraph and list item on a single source line.
 
+## Agent skills
+
+### Issue tracker
+
+Issues live in [vbilgin/sndocs.com](https://github.com/vbilgin/sndocs.com) GitHub Issues, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Single-context: `AGENTS.md` + `.agent/CONTEXT.md` + `.agent/WORKLOG.md` + `docs/adr/` (ADR-0006) — no separate root `CONTEXT.md`. See `docs/agents/domain.md`.
+
 ## Commands
 
 Environment (Python 3.11+; the checked-out `.venv` runs 3.14):
