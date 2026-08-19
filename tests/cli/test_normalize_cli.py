@@ -54,6 +54,25 @@ def test_normalize_closes_open_fence_and_converts_simple_html_table(fixture_corp
         assert "| Column A | Column B |" in html_table
 
 
+def test_normalize_rewrites_cross_file_links_against_the_corpus(fixture_corpus: Path, tmp_path: Path) -> None:
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        _seed_repo(fixture_corpus)
+
+        result = runner.invoke(cli, ["normalize"])
+        assert result.exit_code == 0, result.output
+
+        pipe_table = Path(".sndocs/normalized/markdown/category-one/pipe-table.md").read_text()
+
+        assert "[HTML table page](html-table.md)" in pipe_table
+        assert (
+            "[missing page]"
+            "(https://raw.githubusercontent.com/ServiceNow/ServiceNowDocs/australia/markdown/category-one/does-not-exist.md)"
+            in pipe_table
+        )
+        assert "[ServiceNow](https://www.servicenow.com)" in pipe_table
+
+
 def test_normalize_output_is_idempotent(fixture_corpus: Path, tmp_path: Path) -> None:
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):
