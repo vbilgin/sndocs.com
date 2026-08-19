@@ -34,6 +34,8 @@ import markdown_it
 import yaml
 from markdown_it import MarkdownIt
 
+from sndocs.link_rewrite import rewrite_links
+
 MARKDOWN_SUFFIXES = {".md", ".markdown"}
 TABLE_RE = re.compile(r"<table(?P<attrs>[^>]*)>(?P<body>.*?)</table>", re.IGNORECASE | re.DOTALL)
 ROW_RE = re.compile(r"<tr(?P<attrs>[^>]*)>(?P<body>.*?)</tr>", re.IGNORECASE | re.DOTALL)
@@ -55,6 +57,7 @@ MANIFEST_FILENAME = "normalization-manifest.json"
 _source_root: Path
 _output_root: Path
 _parser: MarkdownIt
+_known_paths: frozenset[str]
 
 
 class NormalizationFailed(Exception):
@@ -389,7 +392,14 @@ def h1_count(md: MarkdownIt, body: str) -> int:
     return sum(token.type == "heading_open" and token.tag == "h1" for token in md.parse(body))
 
 
-def normalize_text(text: str, md: MarkdownIt, *, audit_idempotence: bool = True) -> tuple[str, Counter[str], list[str]]:
+def normalize_text(
+    text: str,
+    md: MarkdownIt,
+    relative_path: str,
+    known_paths: frozenset[str],
+    *,
+    audit_idempotence: bool = True,
+) -> tuple[str, Counter[str], list[str]]:
     stats: Counter[str] = Counter()
     errors: list[str] = []
     if text.startswith("﻿"):
@@ -405,6 +415,11 @@ def normalize_text(text: str, md: MarkdownIt, *, audit_idempotence: bool = True)
         stats["front_matter_fallbacks"] += 1
     if metadata is not None:
         stats["front_matter_canonicalized"] += 1
+
+    body, link_stats = transform_outside_fences(
+        body, lambda chunk: rewrite_links(chunk, known_paths, relative_path)
+    )
+    stats.update(link_stats)
 
     before_h1 = h1_count(md, body)
     cosmetic, cosmetic_stats = cosmetic_candidate(body)
@@ -452,19 +467,23 @@ def normalize_text(text: str, md: MarkdownIt, *, audit_idempotence: bool = True)
     if h1_count(md, body) != before_h1:
         errors.append("H1 token count changed")
     if audit_idempotence:
-        second, _, second_errors = normalize_text(normalized, md, audit_idempotence=False)
+        second, _, second_errors = normalize_text(
+            normalized, md, relative_path, known_paths, audit_idempotence=False
+        )
         if second != normalized:
             errors.append("normalization is not idempotent")
         errors.extend(f"second pass: {error}" for error in second_errors)
     return normalized, stats, errors
 
 
-def _normalize_one(relative: Path, source_root: Path, output_root: Path, md: MarkdownIt) -> dict[str, Any]:
+def _normalize_one(
+    relative: Path, source_root: Path, output_root: Path, md: MarkdownIt, known_paths: frozenset[str]
+) -> dict[str, Any]:
     source_path = source_root / relative
     output_path = output_root / relative
     try:
         original = source_path.read_text(encoding="utf-8")
-        normalized, stats, errors = normalize_text(original, md)
+        normalized, stats, errors = normalize_text(original, md, relative.as_posix(), known_paths)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(normalized, encoding="utf-8")
         return {
@@ -486,15 +505,16 @@ def _normalize_one(relative: Path, source_root: Path, output_root: Path, md: Mar
         }
 
 
-def _init_worker(source: str, output: str) -> None:
-    global _source_root, _output_root, _parser
+def _init_worker(source: str, output: str, known_paths: list[str]) -> None:
+    global _source_root, _output_root, _parser, _known_paths
     _source_root = Path(source)
     _output_root = Path(output)
     _parser = parser()
+    _known_paths = frozenset(known_paths)
 
 
 def _normalize_one_worker(relative_text: str) -> dict[str, Any]:
-    return _normalize_one(Path(relative_text), _source_root, _output_root, _parser)
+    return _normalize_one(Path(relative_text), _source_root, _output_root, _parser, _known_paths)
 
 
 def normalize_corpus(source: Path, output: Path, workers: int | None = None) -> dict[str, Any]:
@@ -516,18 +536,19 @@ def normalize_corpus(source: Path, output: Path, workers: int | None = None) -> 
 
     discovery_started = time.perf_counter()
     paths = discover(source)
+    known_paths = frozenset(p.as_posix() for p in paths)
     discovery_seconds = time.perf_counter() - discovery_started
 
     started = time.perf_counter()
     if workers == 1 or len(paths) <= 1:
         md = parser()
-        results = [_normalize_one(p, source, output, md) for p in paths]
+        results = [_normalize_one(p, source, output, md, known_paths) for p in paths]
     else:
         with ProcessPoolExecutor(
             max_workers=workers,
             mp_context=multiprocessing.get_context("fork"),
             initializer=_init_worker,
-            initargs=(str(source), str(output)),
+            initargs=(str(source), str(output), sorted(known_paths)),
         ) as executor:
             results = list(executor.map(_normalize_one_worker, (p.as_posix() for p in paths), chunksize=16))
     elapsed = time.perf_counter() - started
