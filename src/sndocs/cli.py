@@ -3,8 +3,10 @@ from pathlib import Path
 import click
 
 from sndocs.fetch import fetch_repo
+from sndocs.normalize import NormalizationFailed, normalize_corpus
 
 REPO_DIR = Path(".sndocs") / "repo"
+NORMALIZED_DIR = Path(".sndocs") / "normalized"
 
 
 @click.group()
@@ -20,9 +22,25 @@ def fetch() -> None:
 
 
 @cli.command()
-def normalize() -> None:
-    """Normalize the cloned corpus into .sndocs/normalized/."""
-    click.echo("normalize: not yet implemented")
+@click.option(
+    "--workers",
+    type=click.IntRange(min=1),
+    default=None,
+    help="Parallel workers (default: available CPU count).",
+)
+def normalize(workers: int | None) -> None:
+    """Normalize .sndocs/repo/ into .sndocs/normalized/."""
+    if not REPO_DIR.is_dir():
+        raise click.ClickException(f"{REPO_DIR} does not exist. Run `sndocs fetch` first, or populate it manually.")
+    try:
+        report = normalize_corpus(REPO_DIR, NORMALIZED_DIR, workers=workers)
+    except NormalizationFailed as exc:
+        raise click.ClickException(str(exc)) from exc
+    result = report["result"]
+    click.echo(
+        f"normalize: {result['succeeded']}/{result['total_files']} files normalized "
+        f"into {NORMALIZED_DIR} ({result['changed_files']} changed)"
+    )
 
 
 @cli.command()
