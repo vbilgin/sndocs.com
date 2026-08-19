@@ -50,3 +50,13 @@ MkDocs, served locally. See README.md for the full pipeline description.
 - The normalizer's correctness is validated separately via its own
   invariants and `normalization-report.json` — don't duplicate that in
   pytest; extend the normalizer's own checks instead if you find a gap there.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live as GitHub Issues in `vbilgin/sndocs.com`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
