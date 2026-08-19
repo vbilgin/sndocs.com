@@ -16,6 +16,8 @@ into a spurious top nav entry.
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 import yaml
@@ -85,11 +87,31 @@ def build_nav(docs_dir: Path) -> list[NavEntry]:
     return _section_items(docs_dir, docs_dir)
 
 
+class PagefindIndexingFailed(Exception):
+    """Raised when the Pagefind subprocess exits non-zero; carries its stderr."""
+
+
+def run_pagefind(site_dir: Path) -> None:
+    """Indexes the rendered `site_dir` in place with Pagefind, invoked as a subprocess
+    (not the `pagefind.service`/`pagefind.index` Python API) against the final HTML
+    output. Also emits the `pagefind-ui` widget assets into `site_dir/pagefind/`,
+    which the `overrides/main.html` theme override wires up as the site's search box."""
+    result = subprocess.run(
+        [sys.executable, "-m", "pagefind", "--site", str(site_dir)],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise PagefindIndexingFailed(result.stderr.strip() or result.stdout.strip())
+
+
 def build_site(docs_dir: Path, site_dir: Path, config_file: Path) -> None:
     """Render `docs_dir` into `site_dir` with MkDocs + Material, using `config_file`
-    for theme/site settings and a freshly computed nav. Offline: no network access
-    is made."""
+    for theme/site settings and a freshly computed nav, then index the rendered site
+    with Pagefind. The MkDocs render is offline: no network access is made. Pagefind
+    indexing runs a locally-installed subprocess and likewise makes no network calls."""
     if not docs_dir.is_dir():
         raise FileNotFoundError(f"{docs_dir} does not exist.")
     config = load_config(str(config_file), nav=build_nav(docs_dir), site_dir=str(site_dir))
     mkdocs_build(config)
+    run_pagefind(site_dir)

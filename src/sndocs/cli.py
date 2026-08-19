@@ -2,7 +2,7 @@ from pathlib import Path
 
 import click
 
-from sndocs.build import build_site
+from sndocs.build import PagefindIndexingFailed, build_site
 from sndocs.fetch import fetch_repo
 from sndocs.normalize import NormalizationFailed, normalize_corpus
 
@@ -53,8 +53,11 @@ def build() -> None:
         raise click.ClickException(
             f"{NORMALIZED_DIR} does not exist. Run `sndocs normalize` first, or populate it manually."
         )
-    build_site(NORMALIZED_DIR, SITE_DIR, MKDOCS_CONFIG)
-    click.echo(f"build: rendered {NORMALIZED_DIR} into {SITE_DIR}")
+    try:
+        build_site(NORMALIZED_DIR, SITE_DIR, MKDOCS_CONFIG)
+    except PagefindIndexingFailed as exc:
+        raise click.ClickException(f"Pagefind indexing failed: {exc}") from exc
+    click.echo(f"build: rendered {NORMALIZED_DIR} into {SITE_DIR}, indexed with Pagefind")
 
 
 @cli.command()

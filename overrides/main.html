@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block styles %}
+  {{ super() }}
+  <link rel="stylesheet" href="{{ 'pagefind/pagefind-ui.css' | url }}">
+{% endblock %}
+
+{% block header %}
+  {{ super() }}
+  <div class="sndocs-search" id="sndocs-search"></div>
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script src="{{ 'pagefind/pagefind-ui.js' | url }}"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      new PagefindUI({ element: "#sndocs-search" });
+    });
+  </script>
+{% endblock %}
