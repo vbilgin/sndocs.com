@@ -11,6 +11,8 @@ dependencies = [
     "click>=8.1",
     "markdown-it-py>=3",
     "PyYAML>=6",
+    "mkdocs>=1.6",
+    "mkdocs-material>=9.5",
 ]
 
 [project.optional-dependencies]

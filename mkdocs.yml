@@ -1,0 +1,10 @@
+site_name: ServiceNowDocs (Australia)
+site_url: https://sndocs.com/
+docs_dir: .sndocs/normalized
+site_dir: .sndocs/site
+exclude_docs: |
+  normalization-report.json
+  normalization-manifest.json
+theme:
+  name: material
+  font: false
