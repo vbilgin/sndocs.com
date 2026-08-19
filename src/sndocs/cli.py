@@ -2,11 +2,14 @@ from pathlib import Path
 
 import click
 
+from sndocs.build import build_site
 from sndocs.fetch import fetch_repo
 from sndocs.normalize import NormalizationFailed, normalize_corpus
 
 REPO_DIR = Path(".sndocs") / "repo"
 NORMALIZED_DIR = Path(".sndocs") / "normalized"
+SITE_DIR = Path(".sndocs") / "site"
+MKDOCS_CONFIG = Path("mkdocs.yml")
 
 
 @click.group()
@@ -45,8 +48,13 @@ def normalize(workers: int | None) -> None:
 
 @cli.command()
 def build() -> None:
-    """Build the MkDocs site and run Pagefind indexing into .sndocs/site/."""
-    click.echo("build: not yet implemented")
+    """Build the MkDocs site from .sndocs/normalized/ into .sndocs/site/."""
+    if not NORMALIZED_DIR.is_dir():
+        raise click.ClickException(
+            f"{NORMALIZED_DIR} does not exist. Run `sndocs normalize` first, or populate it manually."
+        )
+    build_site(NORMALIZED_DIR, SITE_DIR, MKDOCS_CONFIG)
+    click.echo(f"build: rendered {NORMALIZED_DIR} into {SITE_DIR}")
 
 
 @cli.command()
