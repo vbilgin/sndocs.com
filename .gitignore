@@ -1,0 +1,24 @@
+# Generated pipeline artifacts (cloned source, normalized Markdown, built site)
+.sndocs/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+
+# Test/tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editor/OS
+.DS_Store
+.idea/
+.vscode/
