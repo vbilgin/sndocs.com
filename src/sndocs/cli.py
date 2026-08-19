@@ -1,4 +1,10 @@
+from pathlib import Path
+
 import click
+
+from sndocs.fetch import fetch_repo
+
+REPO_DIR = Path(".sndocs") / "repo"
 
 
 @click.group()
@@ -9,7 +15,8 @@ def cli() -> None:
 @cli.command()
 def fetch() -> None:
     """Clone or update the australia branch of ServiceNowDocs into .sndocs/repo/."""
-    click.echo("fetch: not yet implemented")
+    fetch_repo(REPO_DIR)
+    click.echo(f"fetch: synced to {REPO_DIR}")
 
 
 @cli.command()
