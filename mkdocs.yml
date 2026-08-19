@@ -5,6 +5,8 @@ site_dir: .sndocs/site
 exclude_docs: |
   normalization-report.json
   normalization-manifest.json
+plugins: []
 theme:
   name: material
   font: false
+  custom_dir: overrides
