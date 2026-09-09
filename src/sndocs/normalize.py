@@ -416,11 +416,6 @@ def normalize_text(
     if metadata is not None:
         stats["front_matter_canonicalized"] += 1
 
-    body, link_stats = transform_outside_fences(
-        body, lambda chunk: rewrite_links(chunk, known_paths, relative_path)
-    )
-    stats.update(link_stats)
-
     before_h1 = h1_count(md, body)
     cosmetic, cosmetic_stats = cosmetic_candidate(body)
     if cosmetic != body:
@@ -443,6 +438,19 @@ def normalize_text(
         errors.append("structural normalization did not converge")
     body, fence_stats = close_unclosed_fence(body)
     stats.update(fence_stats)
+
+    # Rewrite raw-GitHub links only after the structural repairs above have
+    # settled the fence layout. `repair_table_boundaries` splits a fence marker
+    # glued to a `</table>` onto its own line; running the link rewrite before
+    # that split lets `split_fenced_segments` miscount fence parity and protect
+    # prose that a second pass (seeing the repaired layout) would rewrite,
+    # breaking idempotence. Rewriting here means every pass partitions the body
+    # into fenced/unfenced segments identically.
+    body, link_stats = transform_outside_fences(
+        body, lambda chunk: rewrite_links(chunk, known_paths, relative_path)
+    )
+    stats.update(link_stats)
+
     final_cosmetic, final_cosmetic_stats = cosmetic_candidate(body)
     if final_cosmetic != body and md.render(final_cosmetic).rstrip("\n") == md.render(body).rstrip("\n"):
         body = final_cosmetic
