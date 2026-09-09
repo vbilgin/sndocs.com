@@ -268,16 +268,22 @@ def cosmetic_candidate(text: str) -> tuple[str, Counter[str]]:
         if "<table" in lower:
             in_table = True
         line = original_line
-        if not in_table and not line.startswith("    ") and not line.startswith("\t"):
+        if not line.startswith("    ") and not line.startswith("\t"):
+            # Redundant-escape removal (`\(`->`(`, `\)`->`)`, `\_`->`_` between
+            # word chars) is render-neutral even inside a raw HTML `<table>`
+            # block, where Python-Markdown would otherwise leak the backslash to
+            # the page (ADR 0001 finding 2). Every other cosmetic tweak below
+            # stays suppressed while `in_table`.
             line, count = cleanup_inline_segment(line)
             stats["redundant_escapes_removed"] += count
-            trailing = len(line) - len(line.rstrip(" "))
-            if trailing == 1:
-                line = line[:-1]
-                stats["trailing_space_lines_cleaned"] += 1
-            elif trailing > 2:
-                line = line.rstrip(" ") + "  "
-                stats["trailing_space_lines_cleaned"] += 1
+            if not in_table:
+                trailing = len(line) - len(line.rstrip(" "))
+                if trailing == 1:
+                    line = line[:-1]
+                    stats["trailing_space_lines_cleaned"] += 1
+                elif trailing > 2:
+                    line = line.rstrip(" ") + "  "
+                    stats["trailing_space_lines_cleaned"] += 1
         if not line:
             blank_run += 1
             if blank_run > 2:
