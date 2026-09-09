@@ -13,6 +13,11 @@ dependencies = [
     "PyYAML>=6",
     "mkdocs>=1.6",
     "mkdocs-material>=9.5",
+    # Direct: the rendering engine `sndocs.engine_check` re-validates against and
+    # the `pymdownx` bundle `mkdocs.yml` declares (see ADR 0001). Installed
+    # transitively by mkdocs-material too, but pinned here as first-class deps.
+    "Markdown>=3.7",
+    "pymdown-extensions>=10",
     "pagefind[extended]>=1.5",
 ]
 
