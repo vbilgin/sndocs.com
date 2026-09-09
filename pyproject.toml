@@ -28,6 +28,10 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8",
+    # Test/verification only: `sndocs.minify_check` (#33) parses each page's
+    # before/after HTML with lxml to diff DOM structure. Not a runtime dep —
+    # `sndocs build --minify` never imports it.
+    "lxml>=5",
 ]
 
 [project.scripts]
