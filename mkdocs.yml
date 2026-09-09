@@ -38,3 +38,13 @@ theme:
   name: material
   font: false
   custom_dir: overrides
+  features:
+    # Load-bearing, not cosmetic. `nav:` is computed from the whole ~50k-page
+    # `australia` corpus (see src/sndocs/build.py); without `navigation.prune`
+    # Material renders that entire tree into every page's sidebar — an O(n^2)
+    # blow-up that stops a full `sndocs build` from ever finishing. `prune`
+    # renders only each page's visible nav slice (ancestors, siblings, direct
+    # children) and leaves the mirrored structure and `index.md` landing pages
+    # intact. Measurements and rejected alternatives: ADR 0001, "Follow-up:
+    # finding 4"; issue #25.
+    - navigation.prune
