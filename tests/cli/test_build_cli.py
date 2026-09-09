@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
+from mkdocs.config import load_config
 
 from sndocs.cli import cli
 
@@ -64,6 +65,15 @@ def test_build_nav_mirrors_the_source_tree_with_titles_from_front_matter(
         # The corpus's wrapper "markdown/" directory holds no pages of its own, so it
         # does not surface as a nav section label.
         assert ">Markdown<" not in index_html
+
+
+def test_shipped_config_enables_navigation_prune() -> None:
+    """Pin `navigation.prune`: without it Material renders the whole auto-generated
+    nav into every page, the O(n^2) blow-up that stops a full `australia` build
+    from finishing (issue #25 / ADR 0001 finding 4). The build/nav tests above
+    already run `sndocs build` with this config, so they cover non-regression."""
+    config = load_config(str(MKDOCS_CONFIG))
+    assert "navigation.prune" in config["theme"]["features"]
 
 
 def test_build_resolves_link_rewritten_by_normalize_to_the_final_page_url(

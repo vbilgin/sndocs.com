@@ -214,8 +214,74 @@ Deliberately **not** enabled:
 | --- | --- | --- | --- |
 | 2 — redundant escapes inside raw HTML tables | #26 | no | post-v1 rendering-quality; normalizer change, relax the `in_table` guard for `\(` `\)` `\_` only, plus a full-corpus idempotence re-validation pass |
 | 3 — residual malformed table/fence boundaries | #27 | no | post-v1 rendering-quality; widen `repair_table_boundaries()` for newline-then-fence (3b) and add a conservative ragged-pipe-table repair (3a) |
-| 4 — full-corpus `mkdocs build` does not complete (O(n²) nav) | #25 | **yes** (blocking) | evaluate `navigation.prune` / section-index pages / split build, measure, implement |
+| 4 — full-corpus `mkdocs build` does not complete (O(n²) nav) | #25 | **yes** (blocking) | **resolved** — `navigation.prune` (see "Follow-up: finding 4" below); render ~9 min, ~11 min end-to-end with Pagefind |
 | 5 — 33 normalizer idempotence failures on the full corpus | #24 | **yes** (blocking) | pre-existing normalizer bug (issue #8 area), scoped to `api-reference/cllent-mobile-api-reference/` and `api-reference/server-api-reference/` |
 
 Findings 2 and 3 are not sub-issues of #5 — they are standalone quality
 follow-ups. Findings 4 and 5 are blocking sub-issues of #5.
+
+## Follow-up: finding 4 resolved — `navigation.prune` (issue #25)
+
+Date: 2026-09-09
+
+**Cause confirmed.** With `nav:` computed from the ~50k-file corpus and no nav
+feature set, Material renders the *entire* nav tree into every page's sidebar.
+Each rendered page is ~18 MB (the abandoned `.sndocs/site/` from the #14 run has
+155 pages at ~18 MB each = 2.7 GB); throughput collapses to ~0.2 pages/s, so a
+full build is ~69 h extrapolated and never finishes in practice.
+
+**Strategies measured** against the real normalized `australia` corpus (50,112
+files) through the actual `mkdocs.yml` + Material, timing the MkDocs render only
+(Pagefind excluded), on a 10-core machine:
+
+| Strategy | Full-corpus build | Throughput | Output size | Avg page | Biggest page |
+| --- | --- | --- | --- | --- | --- |
+| none (baseline) | ~69 h (never completes) | ~0.2 pages/s | ~900 GB extrapolated | ~18 MB | ~19 MB |
+| **`navigation.prune`** | **~9.0 min** (+27 s nav walk) | **92.9 pages/s** | 11.9 GB | 238 KB | 1.7 MB (`api-reference/`) |
+| `navigation.prune` + HTML minify (`mkdocs-minify-plugin`) | ~25 min | — | ~6.4 GB (−46%) | ~128 KB | — |
+
+Per-page size with prune: site root 18 MB → 39 KB (≈460×), a deep API page
+18 MB → 154 KB (≈117×). Section-index pages stay larger in proportion to their
+own direct child count — `api-reference/index.html` is 1.7 MB because that one
+directory has ~1,250 sibling pages that legitimately belong in its section nav;
+prune cannot and should not hide a section's own children on that section's page.
+
+The ticket lists section-index pages and a split build as further candidates to
+"measure each", but its own Notes say to reach for them only *after* confirming
+`navigation.prune` alone doesn't remove the O(n²) cost. It does, so those two
+were assessed on the mechanism rather than benchmarked full-corpus:
+
+* **Per-directory section-index pages** — changes nav *shape*, not per-page nav
+  *size*; without prune, Material still renders the whole tree on every page, so
+  this is not a performance lever on its own. `build.py` already emits each
+  directory's `index.md` as its section's first entry.
+* **Splitting the build** (one MkDocs site per top-level category, stitched) —
+  would also remove the O(n²), but at real cost: cross-section nav and MkDocs's
+  cross-section link validation are lost, and it needs a bespoke stitching layer
+  and synthetic top index. Only worth it if prune were insufficient; it isn't.
+
+**Decision.** Enable `navigation.prune` in `mkdocs.yml` (`theme.features`). One
+line, no new dependency. The `mkdocs build` render — the "build" the target
+names — is ~9 min (single-digit, target met); `sndocs build` end-to-end is
+~11 min once Pagefind's ~2 min is added, still comfortably inside the ~19 min
+subtree extrapolation that was the pessimistic bound. The auto-generated nav is
+unchanged (`build_nav()` is untouched); spot-checking pruned deep pages from the
+full build (e.g. `api-reference/GlideFormAPINX/index.html`) confirms each page
+still renders its mirrored ancestor + sibling structure and `index.md` section
+landing pages still work (user stories 18, 19). `tests/cli/test_build_cli.py`
+pins the feature; the existing Seam B build/nav tests now exercise it.
+
+How the numbers were produced (corpus and harness aren't committed — repo is
+code/config only): drive `mkdocs.commands.build.build` directly on
+`.sndocs/normalized/`, passing `nav=sndocs.build.build_nav(...)` and
+`load_config(..., docs_dir=..., theme={... "features": [...]})`, timing the
+`build()` call; Pagefind timed separately as `python -m pagefind --site`.
+
+**HTML minification** (the "minify to the fullest extent" ask alongside #25) was
+measured — `htmlmin2` shaves ~46% off the rendered HTML (11.9 GB → ~6.4 GB) —
+but *not* adopted: it is post-render string processing, orthogonal to the O(n²)
+nav problem, and `mkdocs-minify-plugin` runs single-threaded in-process at
+~50 pages/s, adding ~16 min and pushing `sndocs build` well past the
+single-digit-minute target this ticket exists to hit. Left as its own
+optional-flag / faster-minifier follow-up. Markdown output is untouched — the
+normalizer's formatting guarantees stand.
