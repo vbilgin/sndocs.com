@@ -194,5 +194,28 @@ Deliberately **not** enabled:
   is finding 2, which the normalizer currently declines to do.
 * `tests/test_engine_check.py` pins the bundle and the superfences fix as a
   regression guard; `python -m sndocs.engine_check` re-runs the full sweep.
-* Findings 2–5 are logged as follow-up work and do **not** block v1 on the
-  rendering-engine axis this ticket gates.
+* Findings 2–5 are logged as follow-up work (see **Follow-up tickets** below).
+  This ticket gates only the **rendering-engine axis** — whether the
+  normalizer's render-equivalence guarantees hold under Python-Markdown — and on
+  that axis all five findings are resolved or benign.
+* Findings 2 and 3 (redundant escapes in raw HTML tables; residual malformed
+  table/fence boundaries) are genuine post-v1 **rendering-quality** improvements
+  and block nothing.
+* Findings 4 and 5, however, do gate parent #5 on a **separate axis** this ADR
+  does not otherwise cover: *the pipeline running end-to-end on the full
+  `australia` corpus*. Finding 5 makes `sndocs normalize` exit non-zero on the
+  real corpus (batch failure on 33 idempotence violations); finding 4 makes
+  `sndocs build` / `sndocs all` never complete on it. Both are tracked as
+  blocking sub-issues of #5.
+
+## Follow-up tickets
+
+| Finding | Issue | Gates #5? | Disposition |
+| --- | --- | --- | --- |
+| 2 — redundant escapes inside raw HTML tables | #26 | no | post-v1 rendering-quality; normalizer change, relax the `in_table` guard for `\(` `\)` `\_` only, plus a full-corpus idempotence re-validation pass |
+| 3 — residual malformed table/fence boundaries | #27 | no | post-v1 rendering-quality; widen `repair_table_boundaries()` for newline-then-fence (3b) and add a conservative ragged-pipe-table repair (3a) |
+| 4 — full-corpus `mkdocs build` does not complete (O(n²) nav) | #25 | **yes** (blocking) | evaluate `navigation.prune` / section-index pages / split build, measure, implement |
+| 5 — 33 normalizer idempotence failures on the full corpus | #24 | **yes** (blocking) | pre-existing normalizer bug (issue #8 area), scoped to `api-reference/cllent-mobile-api-reference/` and `api-reference/server-api-reference/` |
+
+Findings 2 and 3 are not sub-issues of #5 — they are standalone quality
+follow-ups. Findings 4 and 5 are blocking sub-issues of #5.
