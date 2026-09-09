@@ -278,10 +278,7 @@ code/config only): drive `mkdocs.commands.build.build` directly on
 `build()` call; Pagefind timed separately as `python -m pagefind --site`.
 
 **HTML minification** (the "minify to the fullest extent" ask alongside #25) was
-measured — `htmlmin2` shaves ~46% off the rendered HTML (11.9 GB → ~6.4 GB) —
-but *not* adopted: it is post-render string processing, orthogonal to the O(n²)
-nav problem, and `mkdocs-minify-plugin` runs single-threaded in-process at
-~50 pages/s, adding ~16 min and pushing `sndocs build` well past the
-single-digit-minute target this ticket exists to hit. Left as its own
-optional-flag / faster-minifier follow-up. Markdown output is untouched — the
-normalizer's formatting guarantees stand.
+measured here and deferred; it is now adopted as a parallel `minify-html`
+post-build pass, on by default — see `docs/adr/0002-html-minification.md`
+(issues #31–#34). Markdown output is untouched — the normalizer's formatting
+guarantees stand.
