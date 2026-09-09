@@ -88,7 +88,9 @@ def test_build_resolves_link_rewritten_by_normalize_to_the_final_page_url(
         assert result.exit_code == 0, result.output
 
         pipe_table_html = Path(".sndocs/site/markdown/category-one/pipe-table/index.html").read_text()
-        assert 'href="../html-table/"' in pipe_table_html
+        # `--minify` is on by default (issue #34) and minify-html drops the quotes
+        # around a value that doesn't need them, so match either serialisation.
+        assert re.search(r'href=["\']?\.\./html-table/["\']?', pipe_table_html)
 
 
 def test_build_excludes_normalize_reports_from_the_published_site(fixture_corpus: Path, tmp_path: Path) -> None:
@@ -124,7 +126,8 @@ def test_build_wires_the_pagefind_ui_widget_into_rendered_pages(fixture_corpus: 
         assert result.exit_code == 0, result.output
 
         index_html = Path(".sndocs/site/markdown/category-one/index.html").read_text()
-        assert 'id="sndocs-search"' in index_html
+        # `--minify` defaults on (issue #34); minify-html may drop the quotes.
+        assert re.search(r'id=["\']?sndocs-search["\']?', index_html)
         assert "pagefind-ui.js" in index_html
         assert "pagefind-ui.css" in index_html
         assert "PagefindUI(" in index_html
@@ -228,19 +231,28 @@ def _write_normalized_page(relative: str, title: str, body: str) -> None:
     path.write_text(f"---\ntitle: {title}\n---\n\n{body}\n", encoding="utf-8")
 
 
-def test_build_minify_flag_defaults_off(fixture_corpus: Path, tmp_path: Path) -> None:
+def test_build_minify_flag_defaults_on(fixture_corpus: Path, tmp_path: Path) -> None:
+    """Issue #34 flipped the default: a bare `sndocs build` minifies. `--no-minify`
+    is now the opt-out."""
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):
         _seed_normalized(fixture_corpus)
 
+        assert runner.invoke(cli, ["build", "--no-minify"]).exit_code == 0
+        plain_bytes = _tree_bytes(SITE)
+
+        assert runner.invoke(cli, ["build", "--minify"]).exit_code == 0
+        explicit_minify_bytes = _tree_bytes(SITE)
+
         result = runner.invoke(cli, ["build"])
         assert result.exit_code == 0, result.output
 
-        # No minify pass ran and nothing about minification is reported.
-        assert "minified" not in result.output
-        index_html = (SITE / "markdown" / "category-one" / "index.html").read_text()
-        # Un-minified: MkDocs/Material template whitespace between tags survives.
-        assert ">\n" in index_html
+        # The minify pass ran without being asked to, is reported, and produced
+        # exactly what an explicit `--minify` would have.
+        assert "build: minified" in result.output
+        default_bytes = _tree_bytes(SITE)
+        assert default_bytes < plain_bytes
+        assert default_bytes == explicit_minify_bytes
 
 
 def test_build_minify_shrinks_the_site_and_reports_a_tally(fixture_corpus: Path, tmp_path: Path) -> None:
@@ -285,7 +297,7 @@ def test_build_rejects_minify_workers_without_minify(fixture_corpus: Path, tmp_p
     with runner.isolated_filesystem(temp_dir=tmp_path):
         _seed_normalized(fixture_corpus)
 
-        result = runner.invoke(cli, ["build", "--minify-workers", "4"])
+        result = runner.invoke(cli, ["build", "--no-minify", "--minify-workers", "4"])
 
         assert result.exit_code != 0
         assert "--minify-workers has no effect without --minify" in result.output

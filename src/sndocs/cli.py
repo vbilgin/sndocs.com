@@ -31,7 +31,7 @@ def minify_options(func: Callable[..., None]) -> Callable[..., None]:
     )(func)
     func = click.option(
         "--minify/--no-minify",
-        default=False,
+        default=True,
         show_default=True,
         help="Minify the rendered site's HTML with minify-html before Pagefind indexing.",
     )(func)

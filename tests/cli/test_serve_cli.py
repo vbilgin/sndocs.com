@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import threading
 import time
@@ -111,7 +112,9 @@ def test_serve_serves_a_rendered_page_with_working_navigation(running_serve: str
     # The nav lists sibling pages by their front-matter titles and links to them;
     # follow one of those links and confirm it resolves under the served tree.
     assert b"Pipe Table Page" in body
-    assert b'href="pipe-table/"' in body
+    # The built site is minified by default (issue #34); minify-html may drop the
+    # quotes around a value that doesn't need them.
+    assert re.search(rb'href=["\']?pipe-table/["\']?', body)
     assert _get(running_serve + "/markdown/category-one/pipe-table/")[0] == 200
 
 
@@ -123,7 +126,7 @@ def test_serve_exposes_a_working_pagefind_search_box(running_serve: str) -> None
     assert _get(running_serve + "/pagefind/pagefind.js")[0] == 200
 
     _, body = _get(running_serve + "/markdown/category-one/")
-    assert b'id="sndocs-search"' in body
+    assert re.search(rb'id=["\']?sndocs-search["\']?', body)
     assert b"pagefind-ui.js" in body
 
 

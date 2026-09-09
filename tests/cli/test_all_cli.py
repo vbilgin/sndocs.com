@@ -1,3 +1,4 @@
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -51,7 +52,11 @@ def test_all_runs_the_full_pipeline_from_a_clean_checkout(stubbed_remote: Path, 
 
         # ...and Pagefind indexed it, so it's ready for `sndocs serve`.
         assert Path(".sndocs/site/pagefind/pagefind.js").is_file()
-        assert 'id="sndocs-search"' in index_html
+        # `--minify` defaults on (issue #34); minify-html may drop the quotes.
+        assert re.search(r'id=["\']?sndocs-search["\']?', index_html)
+
+        # `--minify` defaults on (issue #34) and `all` forwards it to `build`.
+        assert "build: minified" in result.output
 
         # The run signs off with its own summary line, like every sibling command.
         assert "all:" in result.output
@@ -94,7 +99,7 @@ def test_all_forwards_minify_flags_to_the_build_step(stubbed_remote: Path, tmp_p
     with runner.isolated_filesystem(temp_dir=tmp_path):
         _seed_site_config()
 
-        baseline = runner.invoke(cli, ["all"])
+        baseline = runner.invoke(cli, ["all", "--no-minify"])
         assert baseline.exit_code == 0, baseline.output
         assert "minified" not in baseline.output
         plain_bytes = sum(p.stat().st_size for p in Path(".sndocs/site").rglob("*") if p.is_file())
