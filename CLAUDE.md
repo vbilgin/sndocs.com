@@ -36,6 +36,28 @@ for the v1 spec before building anything.
   its own small branch/PR rather than landing on `main` directly, unless the
   user says otherwise.
 
+## Worktrees
+
+- **Always work in a worktree for code/config changes.** Call the
+  `EnterWorktree` tool before the first edit — every session, no exceptions,
+  whether or not the harness prompts for it. Consistency matters more than
+  the marginal case where isolation seems unnecessary.
+- **Doc-only edits are the sole carve-out.** Prose, ADRs, README, and this
+  file may land on `main` directly (see
+  [Branching and PRs](#branching-and-prs)) and don't need a worktree —
+  except when a harness guard blocks editing the shared checkout (e.g.
+  background sessions), in which case use a worktree for those too.
+- Commit — and push, if there's a remote — from the worktree before
+  finishing, so the work survives the worktree being cleaned up.
+
+## Merging PRs
+
+- **You may merge PRs, but only with the user's explicit go-ahead for that
+  specific PR.** Never merge unprompted. Approval of one PR does not carry
+  over to the next — ask again each time.
+- Still never force-push, and never push directly to `main`/`master` outside
+  the normal PR merge.
+
 ## Agent skills
 
 ### Issue tracker
