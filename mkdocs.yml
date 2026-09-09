@@ -6,6 +6,34 @@ exclude_docs: |
   normalization-report.json
   normalization-manifest.json
 plugins: []
+# Markdown rendering engine (Python-Markdown + pymdownx). Deliberately kept close
+# to the CommonMark + GFM-tables baseline the normalizer validates its
+# "safe to normalize" render-equivalence against (markdown-it-py, commonmark
+# preset + `table`). Re-validated against this bundle in issue #14 — see
+# docs/adr/0001-rendering-engine-revalidation.md and `sndocs.engine_check`.
+#
+#   - tables .............. corpus is full of GFM pipe tables; the normalizer also
+#                           emits them when converting simple HTML tables.
+#   - toc (permalink) ..... heading anchors for in-page navigation.
+#   - pymdownx.superfences  replaces the stock `fenced_code`: the corpus has many
+#                           unlabelled / tightly-surrounded ``` fences (and the
+#                           normalizer's EOF fence closure adds bare ``` fences)
+#                           that `fenced_code` leaves as literal text in a <p>.
+#   - pymdownx.highlight .. documented superfences pairing; guess_lang off so an
+#                           unlabelled fence stays a plain <pre><code>.
+#
+# Intentionally NOT enabled: md_in_html (raw HTML must stay opaque passthrough,
+# matching markdown-it's `html:true` and the normalizer's "leave complex tables
+# as raw HTML" contract), and the aggressive inline-syntax extensions
+# (tilde/caret/mark/smartsymbols/magiclink/emoji) — near-zero corpus usage, and
+# they would widen the parse surface the normalizer's guarantees rest on.
+markdown_extensions:
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      guess_lang: false
 theme:
   name: material
   font: false
