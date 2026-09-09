@@ -22,25 +22,39 @@ from pathlib import Path
 import minify_html
 
 # The one conservative minify profile, defined here so `sndocs.minify_check`
-# (#33) imports it rather than keeping its own copy. Every option is spelled out
-# even where it matches the library default, so the profile can't silently drift
-# if a `minify-html` release flips a default:
+# (#33) imports it rather than keeping its own copy. Every keyword `minify-html`
+# accepts is pinned explicitly — even where the value matches the current library
+# default — so a future release flipping a default can't silently change what the
+# built site looks like (`test_minify_options_are_the_conservative_profile` locks
+# the exact dict):
 #
 #   * keep_closing_tags / keep_html_and_head_opening_tags — leave the tag shape
 #     MkDocs emitted intact; only inter-tag whitespace and comments go.
-#   * keep_comments off — strip HTML comments (the default).
+#   * keep_comments off — strip HTML comments (the default). NOTE: this pass runs
+#     *before* Pagefind indexing (see `sndocs.build.build_site`), so an
+#     HTML-comment Pagefind directive (`<!-- pagefind-ignore -->`) would be gone
+#     before Pagefind sees it. The corpus/theme use none today; if that changes,
+#     use the attribute form (`data-pagefind-ignore`) instead.
 #   * minify_css / minify_js off — never touch stylesheet or script bodies.
 #   * minify_doctype off — leave `<!DOCTYPE html>` untouched.
 #   * every allow_* relaxation off — in particular allow_optimal_entities stays
 #     off so an `href` query string like `?x=1&sect=2&para=3` is never re-parsed
 #     into `§`/`¶` (`&sect`/`&para` are valid entity names without a semicolon).
+#   * every keep_*/preserve_*/remove_* left at its safe default, pinned so it
+#     stays there.
 MINIFY_OPTIONS: dict[str, bool] = {
     "keep_closing_tags": True,
     "keep_html_and_head_opening_tags": True,
     "keep_comments": False,
+    "keep_input_type_text_attr": False,
+    "keep_ssi_comments": False,
     "minify_css": False,
     "minify_js": False,
     "minify_doctype": False,
+    "preserve_brace_template_syntax": False,
+    "preserve_chevron_percent_template_syntax": False,
+    "remove_bangs": False,
+    "remove_processing_instructions": False,
     "allow_noncompliant_unquoted_attribute_values": False,
     "allow_optimal_entities": False,
     "allow_removing_spaces_between_attributes": False,
@@ -70,10 +84,17 @@ class MinifyReport:
 
 def _minify_path(absolute: Path, site_root: Path) -> dict[str, object]:
     relative = absolute.relative_to(site_root).as_posix()
-    original = absolute.read_bytes()
+    original = b""
     try:
-        minified = minify_html_text(original.decode("utf-8")).encode("utf-8")
-    except Exception as exc:  # poison file: leave it byte-for-byte, tally it
+        original = absolute.read_bytes()
+        candidate = minify_html_text(original.decode("utf-8")).encode("utf-8")
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except BaseException as exc:
+        # A poison file — unreadable (OSError), not UTF-8 (UnicodeDecodeError),
+        # or minify-html hitting a Rust panic (pyo3 PanicException is a
+        # BaseException, not an Exception) — is left byte-for-byte as MkDocs
+        # produced it, tallied, and reported; the build still succeeds.
         return {
             "path": relative,
             "ok": False,
@@ -81,14 +102,20 @@ def _minify_path(absolute: Path, site_root: Path) -> dict[str, object]:
             "bytes_before": len(original),
             "bytes_after": len(original),
         }
-    if minified != original:
-        absolute.write_bytes(minified)
+    # Only rewrite when minification actually shrinks the file, so the pass can
+    # never leave a page larger than MkDocs rendered it (and reported savings
+    # can never go negative).
+    if len(candidate) < len(original):
+        absolute.write_bytes(candidate)
+        bytes_after = len(candidate)
+    else:
+        bytes_after = len(original)
     return {
         "path": relative,
         "ok": True,
         "error": None,
         "bytes_before": len(original),
-        "bytes_after": len(minified),
+        "bytes_after": bytes_after,
     }
 
 

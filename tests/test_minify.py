@@ -4,6 +4,8 @@ per-file error handling."""
 
 from pathlib import Path
 
+import minify_html
+
 from sndocs.minify import MINIFY_OPTIONS, minify_html_text, minify_site
 
 
@@ -14,13 +16,27 @@ def test_minify_options_are_the_conservative_profile() -> None:
         "keep_closing_tags": True,
         "keep_html_and_head_opening_tags": True,
         "keep_comments": False,
+        "keep_input_type_text_attr": False,
+        "keep_ssi_comments": False,
         "minify_css": False,
         "minify_js": False,
         "minify_doctype": False,
+        "preserve_brace_template_syntax": False,
+        "preserve_chevron_percent_template_syntax": False,
+        "remove_bangs": False,
+        "remove_processing_instructions": False,
         "allow_noncompliant_unquoted_attribute_values": False,
         "allow_optimal_entities": False,
         "allow_removing_spaces_between_attributes": False,
     }
+
+
+def test_minify_options_pin_every_keyword_the_library_accepts() -> None:
+    import inspect
+
+    params = inspect.signature(minify_html.minify).parameters
+    accepted = {name for name, p in params.items() if p.kind == p.KEYWORD_ONLY}
+    assert accepted == set(MINIFY_OPTIONS), accepted ^ set(MINIFY_OPTIONS)
 
 
 def test_minify_html_text_collapses_inter_tag_whitespace_but_keeps_structure() -> None:
@@ -31,6 +47,19 @@ def test_minify_html_text_collapses_inter_tag_whitespace_but_keeps_structure() -
 def test_minify_html_text_does_not_fold_entity_prefixed_query_params() -> None:
     out = minify_html_text('<a href="/s?q=1&sect=2&para=3">x</a>')
     assert "&sect=2&para=3" in out
+
+
+def test_minify_site_never_enlarges_a_file_or_reports_negative_savings(tmp_path: Path) -> None:
+    # Already-tight HTML that minify-html can't shrink further.
+    tight = "<p>hi</p>"
+    page = tmp_path / "tight.html"
+    page.write_text(tight, encoding="utf-8")
+
+    report = minify_site(tmp_path, workers=1)
+
+    assert page.read_text() == tight  # left exactly as-is, not rewritten larger
+    assert report.bytes_saved == 0
+    assert report.bytes_saved >= 0
 
 
 def test_minify_site_shrinks_html_and_tallies_a_poison_file(tmp_path: Path) -> None:

@@ -19,6 +19,7 @@ MKDOCS_CONFIG = Path("mkdocs.yml")
 # Cap on per-file minify errors listed individually in the build output.
 MINIFY_FAILURES_SHOWN = 10
 
+
 def minify_options(func: Callable[..., None]) -> Callable[..., None]:
     """Shared `--minify/--no-minify` + `--minify-workers` options for `build` and
     `all` (which forwards them straight through)."""
@@ -75,6 +76,8 @@ def normalize(workers: int | None) -> None:
 @minify_options
 def build(minify: bool, minify_workers: int | None) -> None:
     """Build the MkDocs site from .sndocs/normalized/ into .sndocs/site/."""
+    if minify_workers is not None and not minify:
+        raise click.UsageError("--minify-workers has no effect without --minify.")
     if not NORMALIZED_DIR.is_dir():
         raise click.ClickException(
             f"{NORMALIZED_DIR} does not exist. Run `sndocs normalize` first, or populate it manually."

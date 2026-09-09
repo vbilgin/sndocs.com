@@ -280,6 +280,18 @@ def test_build_minify_accepts_a_worker_count(fixture_corpus: Path, tmp_path: Pat
         assert "build: minified" in result.output
 
 
+def test_build_rejects_minify_workers_without_minify(fixture_corpus: Path, tmp_path: Path) -> None:
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        _seed_normalized(fixture_corpus)
+
+        result = runner.invoke(cli, ["build", "--minify-workers", "4"])
+
+        assert result.exit_code != 0
+        assert "--minify-workers has no effect without --minify" in result.output
+        assert not SITE.exists()
+
+
 def test_build_minify_preserves_pre_block_whitespace(fixture_corpus: Path, tmp_path: Path) -> None:
     runner = CliRunner()
     page_rel = SITE / "markdown" / "category-one" / "open-fence" / "index.html"
