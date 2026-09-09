@@ -24,6 +24,8 @@ import yaml
 from mkdocs.commands.build import build as mkdocs_build
 from mkdocs.config import load_config
 
+from sndocs.minify import MinifyReport, minify_site
+
 NavEntry = dict[str, "str | list[NavEntry]"]
 
 
@@ -105,13 +107,28 @@ def run_pagefind(site_dir: Path) -> None:
         raise PagefindIndexingFailed(result.stderr.strip() or result.stdout.strip())
 
 
-def build_site(docs_dir: Path, site_dir: Path, config_file: Path) -> None:
+def build_site(
+    docs_dir: Path,
+    site_dir: Path,
+    config_file: Path,
+    *,
+    minify: bool = False,
+    minify_workers: int | None = None,
+) -> MinifyReport | None:
     """Render `docs_dir` into `site_dir` with MkDocs + Material, using `config_file`
     for theme/site settings and a freshly computed nav, then index the rendered site
     with Pagefind. The MkDocs render is offline: no network access is made. Pagefind
-    indexing runs a locally-installed subprocess and likewise makes no network calls."""
+    indexing runs a locally-installed subprocess and likewise makes no network calls.
+
+    With `minify=True`, every rendered `site_dir/**/*.html` file is run through
+    `minify-html` between the MkDocs render and Pagefind indexing (the `pagefind/`
+    directory does not exist yet, so the walk needs no exclusions), parallelised
+    across `minify_workers` processes (default: CPU count). Returns the
+    `MinifyReport` in that case, `None` otherwise."""
     if not docs_dir.is_dir():
         raise FileNotFoundError(f"{docs_dir} does not exist.")
     config = load_config(str(config_file), nav=build_nav(docs_dir), site_dir=str(site_dir))
     mkdocs_build(config)
+    report = minify_site(site_dir, workers=minify_workers) if minify else None
     run_pagefind(site_dir)
+    return report
