@@ -213,7 +213,7 @@ Deliberately **not** enabled:
 | Finding | Issue | Gates #5? | Disposition |
 | --- | --- | --- | --- |
 | 2 — redundant escapes inside raw HTML tables | #26 | no | post-v1 rendering-quality; normalizer change, relax the `in_table` guard for `\(` `\)` `\_` only, plus a full-corpus idempotence re-validation pass |
-| 3 — residual malformed table/fence boundaries | #27 | no | **resolved (code)** — `repair_table_boundaries()` widened for newline-then-fence (3b) and for the single-column-caption pipe-table shape (3a); see "Follow-up: finding 3" below. Full-corpus re-scan + idempotence re-validation still to run. |
+| 3 — residual malformed table/fence boundaries | #27 | no | **resolved** — `repair_table_boundaries()` widened for newline-then-fence (3b) and for the single-column-caption pipe-table shape (3a); full-corpus engine re-scan is clean (0 findings). See "Follow-up: finding 3" below. Full-corpus `sndocs normalize` idempotence-to-disk pass still to run. |
 | 4 — full-corpus `mkdocs build` does not complete (O(n²) nav) | #25 | **yes** (blocking) | **resolved** — `navigation.prune` (see "Follow-up: finding 4" below); render ~9 min, ~11 min end-to-end with Pagefind |
 | 5 — 33 normalizer idempotence failures on the full corpus | #24 | **yes** (blocking) | pre-existing normalizer bug (issue #8 area), scoped to `api-reference/cllent-mobile-api-reference/` and `api-reference/server-api-reference/` |
 
@@ -245,10 +245,17 @@ existing "no broken table boundary remains" invariant:
   repair and the normalizer leaves it exactly as-is. Body-row column
   raggedness already renders fine under Python-Markdown and needs no repair.
 
-Unit coverage: `tests/test_normalize_table_repair.py`. **Still outstanding**
-(needs the full corpus, run manually): re-scan the ~9 fence / ~18 pipe-table
-pages with `python -m sndocs.engine_check` to confirm the leaks are gone, and a
-full-corpus `sndocs normalize` idempotence pass (byte-identical second run).
+Unit coverage: `tests/test_normalize_table_repair.py`.
+
+**Re-scan: clean.** `python -m sndocs.engine_check` over the full `australia`
+corpus (50,112 files, source bodies re-normalized in-process with this change)
+reports **0 findings** — down from the ~9 fence-in-`<p>` and ~18
+`table-not-rendered` residuals finding 3 recorded. The genuinely-ragged
+non-caption shapes the repair deliberately skips did not leave a residual leak.
+
+**Still outstanding** (needs the full corpus, run manually): a full-corpus
+`sndocs normalize` idempotence pass to disk — exit 0 and byte-identical second
+run (depends on #24, or run against the currently-passing subset).
 
 ## Follow-up: finding 4 resolved — `navigation.prune` (issue #25)
 
