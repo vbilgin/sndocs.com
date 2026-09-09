@@ -1,3 +1,4 @@
+import subprocess
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
@@ -88,9 +89,24 @@ def serve(port: int) -> None:
 
 
 @cli.command(name="all")
-def run_all() -> None:
-    """Run fetch, normalize, and build in sequence."""
-    click.echo("all: not yet implemented")
+@click.pass_context
+def run_all(ctx: click.Context) -> None:
+    """Run fetch, normalize, and build in sequence.
+
+    A convenience wrapper for the full pipeline: from a clean checkout this takes
+    you to a browsable local site in `.sndocs/site/` (ready for `sndocs serve`) in
+    one command. Every run is a full rebuild — fetch resyncs the clone to the
+    remote, normalize rewrites `.sndocs/normalized/` from scratch, and build
+    re-renders `.sndocs/site/` from scratch, with no incremental/change-detection
+    logic. If any step fails the run stops there with a clear error.
+    """
+    try:
+        ctx.invoke(fetch)
+        ctx.invoke(normalize)
+        ctx.invoke(build)
+    except subprocess.CalledProcessError as exc:
+        raise click.ClickException(f"pipeline step failed: {exc}") from exc
+    click.echo(f"all: fetch + normalize + build complete; {SITE_DIR} ready for `sndocs serve`")
 
 
 if __name__ == "__main__":
