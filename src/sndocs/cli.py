@@ -1,3 +1,4 @@
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import click
@@ -5,6 +6,7 @@ import click
 from sndocs.build import PagefindIndexingFailed, build_site
 from sndocs.fetch import fetch_repo
 from sndocs.normalize import NormalizationFailed, normalize_corpus
+from sndocs.serve import DEFAULT_PORT, serve_site
 
 REPO_DIR = Path(".sndocs") / "repo"
 NORMALIZED_DIR = Path(".sndocs") / "normalized"
@@ -61,9 +63,28 @@ def build() -> None:
 
 
 @cli.command()
-def serve() -> None:
-    """Serve the last built site from .sndocs/site/."""
-    click.echo("serve: not yet implemented")
+@click.option("--port", type=int, default=DEFAULT_PORT, show_default=True, help="Localhost port to bind.")
+def serve(port: int) -> None:
+    """Serve the last built site from .sndocs/site/ on localhost.
+
+    A plain static file server: no rebuild, no watch, no MkDocs. What it serves is
+    exactly what the last `sndocs build` produced, search index included. Press
+    Ctrl+C to stop.
+    """
+    if not SITE_DIR.is_dir():
+        raise click.ClickException(
+            f"{SITE_DIR} does not exist. Run `sndocs build` first, or populate it manually."
+        )
+
+    def _announce(server: ThreadingHTTPServer) -> None:
+        bound_host, bound_port = server.server_address[:2]
+        click.echo(f"serve: serving {SITE_DIR} at http://{bound_host}:{bound_port}/ (press Ctrl+C to stop)")
+
+    try:
+        serve_site(SITE_DIR, port=port, on_ready=_announce)
+    except OSError as exc:
+        raise click.ClickException(f"could not bind localhost:{port}: {exc}") from exc
+    click.echo("serve: stopped")
 
 
 @cli.command(name="all")
