@@ -1,5 +1,7 @@
 import shutil
+import socket
 import subprocess
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -11,6 +13,15 @@ FIXTURE_CORPUS = Path(__file__).parent / "fixtures" / "corpus"
 def fixture_corpus() -> Path:
     """Path to the handcrafted fixture corpus CLI subcommands are tested against (Seam B)."""
     return FIXTURE_CORPUS
+
+
+@pytest.fixture
+def free_port() -> int:
+    """An OS-assigned free TCP port on localhost, for tests that stand up a real HTTP
+    server (`build`'s Pagefind query test, `serve`'s Seam B tests)."""
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
 
 
 def run_git(args: list[str], cwd: Path) -> None:

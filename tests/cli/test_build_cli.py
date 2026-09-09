@@ -1,10 +1,8 @@
 import http.server
 import json
 import shutil
-import socket
 import subprocess
 import threading
-from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -121,14 +119,8 @@ def test_build_wires_the_pagefind_ui_widget_into_rendered_pages(fixture_corpus: 
         assert "PagefindUI(" in index_html
 
 
-def _free_port() -> int:
-    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
-
-
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node is required to drive Pagefind's search runtime the way pagefind-ui does client-side.")
-def test_build_produces_a_queryable_pagefind_index(fixture_corpus: Path, tmp_path: Path) -> None:
+def test_build_produces_a_queryable_pagefind_index(fixture_corpus: Path, tmp_path: Path, free_port: int) -> None:
     """Runs `sndocs build` against the fixture corpus (Seam B) and, mirroring what
     pagefind-ui does in the browser, loads the built index over HTTP with Pagefind's
     own JS runtime and issues a real search against it."""
@@ -143,7 +135,7 @@ def test_build_produces_a_queryable_pagefind_index(fixture_corpus: Path, tmp_pat
         pagefind_js = site / "pagefind" / "pagefind.js"
         assert pagefind_js.is_file()
 
-        port = _free_port()
+        port = free_port
         server = http.server.ThreadingHTTPServer(
             ("127.0.0.1", port),
             lambda *args: http.server.SimpleHTTPRequestHandler(*args, directory=str(site)),

@@ -16,8 +16,9 @@ def test_cli_lists_all_subcommands() -> None:
 def test_each_stub_subcommand_runs(fixture_corpus: Path) -> None:
     assert fixture_corpus.is_dir()
 
-    # "fetch", "normalize", and "build" are implemented (see their own test files); the rest are still stubs.
-    for name in ("serve", "all"):
+    # "fetch", "normalize", "build", and "serve" are implemented (see their own test
+    # files); "all" is still a stub.
+    for name in ("all",):
         result = CliRunner().invoke(cli, [name])
         assert result.exit_code == 0
 
