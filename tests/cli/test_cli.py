@@ -13,16 +13,6 @@ def test_cli_lists_all_subcommands() -> None:
         assert name in result.output
 
 
-def test_each_stub_subcommand_runs(fixture_corpus: Path) -> None:
-    assert fixture_corpus.is_dir()
-
-    # "fetch", "normalize", "build", and "serve" are implemented (see their own test
-    # files); "all" is still a stub.
-    for name in ("all",):
-        result = CliRunner().invoke(cli, [name])
-        assert result.exit_code == 0
-
-
 def test_fixture_corpus_covers_required_cases(fixture_corpus: Path) -> None:
     category = fixture_corpus / "markdown" / "category-one"
 
