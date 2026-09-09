@@ -1,5 +1,6 @@
 import http.server
 import json
+import re
 import shutil
 import subprocess
 import threading
@@ -207,3 +208,153 @@ def test_build_fails_loudly_without_a_normalized_directory(tmp_path: Path) -> No
 
         assert result.exit_code != 0
         assert not Path(".sndocs/site").exists()
+
+
+# --- --minify pass (issue #32) ------------------------------------------------
+
+SITE = Path(".sndocs/site")
+NORMALIZED = Path(".sndocs/normalized")
+
+
+def _tree_bytes(root: Path) -> int:
+    return sum(p.stat().st_size for p in root.rglob("*") if p.is_file())
+
+
+def _write_normalized_page(relative: str, title: str, body: str) -> None:
+    """Drops an extra already-normalized Markdown page into `.sndocs/normalized/`
+    (post-`normalize`, pre-`build`) so a test can exercise specific rendered HTML."""
+    path = NORMALIZED / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"---\ntitle: {title}\n---\n\n{body}\n", encoding="utf-8")
+
+
+def test_build_minify_flag_defaults_off(fixture_corpus: Path, tmp_path: Path) -> None:
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        _seed_normalized(fixture_corpus)
+
+        result = runner.invoke(cli, ["build"])
+        assert result.exit_code == 0, result.output
+
+        # No minify pass ran and nothing about minification is reported.
+        assert "minified" not in result.output
+        index_html = (SITE / "markdown" / "category-one" / "index.html").read_text()
+        # Un-minified: MkDocs/Material template whitespace between tags survives.
+        assert ">\n" in index_html
+
+
+def test_build_minify_shrinks_the_site_and_reports_a_tally(fixture_corpus: Path, tmp_path: Path) -> None:
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        _seed_normalized(fixture_corpus)
+
+        assert runner.invoke(cli, ["build", "--no-minify"]).exit_code == 0
+        plain_bytes = _tree_bytes(SITE)
+        plain_index = (SITE / "markdown" / "category-one" / "index.html").stat().st_size
+
+        result = runner.invoke(cli, ["build", "--minify"])
+        assert result.exit_code == 0, result.output
+
+        assert _tree_bytes(SITE) < plain_bytes
+        assert (SITE / "markdown" / "category-one" / "index.html").stat().st_size < plain_index
+        # The run reports how many files it minified and how much it saved.
+        assert "build: minified" in result.output
+        assert "/" in result.output.split("build: minified", 1)[1].split()[0]
+        assert "bytes smaller" in result.output
+
+        # Pagefind still runs *after* the minify pass and the search widget wiring
+        # survives minification.
+        assert (SITE / "pagefind" / "pagefind.js").is_file()
+        index_html = (SITE / "markdown" / "category-one" / "index.html").read_text()
+        assert re.search(r'id=["\']?sndocs-search["\']?', index_html)
+        assert "PagefindUI(" in index_html  # inline script body left intact (minify_js off)
+
+
+def test_build_minify_accepts_a_worker_count(fixture_corpus: Path, tmp_path: Path) -> None:
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        _seed_normalized(fixture_corpus)
+
+        result = runner.invoke(cli, ["build", "--minify", "--minify-workers", "2"])
+        assert result.exit_code == 0, result.output
+        assert "build: minified" in result.output
+
+
+def test_build_minify_preserves_pre_block_whitespace(fixture_corpus: Path, tmp_path: Path) -> None:
+    runner = CliRunner()
+    page_rel = SITE / "markdown" / "category-one" / "open-fence" / "index.html"
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        _seed_normalized(fixture_corpus)
+
+        assert runner.invoke(cli, ["build", "--no-minify"]).exit_code == 0
+        plain_size = page_rel.stat().st_size
+
+        assert runner.invoke(cli, ["build", "--minify"]).exit_code == 0
+        page = page_rel.read_text()
+
+        # The pass really ran on this page...
+        assert page_rel.stat().st_size < plain_size
+        # ...but open-fence.md's fenced code block keeps its indentation and
+        # newlines inside <pre> byte-for-byte.
+        pre = page[page.index("<pre") : page.index("</pre>") + len("</pre>")]
+        assert '"unclosed fence"' in pre
+        assert "\n    " in pre  # the 4-space body indent + its newline are intact
+
+
+def test_build_minify_preserves_inline_svg_and_entity_prefixed_query_params(
+    fixture_corpus: Path, tmp_path: Path
+) -> None:
+    runner = CliRunner()
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">'
+        '<path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>'
+    )
+    link = "[filtered](https://www.servicenow.com/search?q=x&sect=admin&para=intro)"
+    page_rel = SITE / "markdown" / "category-one" / "minify-edge" / "index.html"
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        _seed_normalized(fixture_corpus)
+        _write_normalized_page(
+            "markdown/category-one/minify-edge.md",
+            "Minify Edge Page",
+            f"An icon:\n\n{svg}\n\nA link: {link}.",
+        )
+
+        assert runner.invoke(cli, ["build", "--minify"]).exit_code == 0
+        minified = page_rel.read_text()
+
+        # The inline SVG's geometry survives the pass untouched.
+        assert '<path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>' in minified
+        assert "<svg" in minified and "</svg>" in minified
+
+        # The href's query string is intact: params in order, and NOT folded into
+        # the section-/pilcrow-sign characters `&sect`/`&para` name (that fold
+        # would silently corrupt the URL). `&amp;`/`&` are equivalent in an
+        # attribute value, so accept either separator encoding.
+        href = re.search(r'href="(https://www\.servicenow\.com/search[^"]*)"', minified)
+        assert href is not None, minified
+        url = href.group(1)
+        assert url in (
+            "https://www.servicenow.com/search?q=x&sect=admin&para=intro",
+            "https://www.servicenow.com/search?q=x&amp;sect=admin&amp;para=intro",
+        )
+        assert "§" not in url and "¶" not in url
+
+
+def test_build_minify_skips_a_poison_html_file_without_failing(fixture_corpus: Path, tmp_path: Path) -> None:
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        _seed_normalized(fixture_corpus)
+        # A non-UTF-8 .html file: MkDocs copies it through verbatim as a static
+        # file, and minify-html can't decode it.
+        poison = NORMALIZED / "markdown" / "category-one" / "poison.html"
+        poison_bytes = b"<html><body>\xff\xfe poison \x00 <p>not utf-8</body></html>"
+        poison.write_bytes(poison_bytes)
+
+        result = runner.invoke(cli, ["build", "--minify"])
+
+        assert result.exit_code == 0, result.output
+        # Left byte-for-byte as MkDocs produced it...
+        assert (SITE / "markdown" / "category-one" / "poison.html").read_bytes() == poison_bytes
+        # ...counted, and surfaced in the build output.
+        assert "could not be minified" in result.output
+        assert "poison.html" in result.output

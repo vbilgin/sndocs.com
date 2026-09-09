@@ -89,6 +89,23 @@ def test_all_is_a_full_rebuild_every_run(stubbed_remote: Path, tmp_path: Path) -
         assert not stale.exists()
 
 
+def test_all_forwards_minify_flags_to_the_build_step(stubbed_remote: Path, tmp_path: Path) -> None:
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        _seed_site_config()
+
+        baseline = runner.invoke(cli, ["all"])
+        assert baseline.exit_code == 0, baseline.output
+        assert "minified" not in baseline.output
+        plain_bytes = sum(p.stat().st_size for p in Path(".sndocs/site").rglob("*") if p.is_file())
+
+        result = runner.invoke(cli, ["all", "--minify", "--minify-workers", "2"])
+        assert result.exit_code == 0, result.output
+        assert "build: minified" in result.output
+        minified_bytes = sum(p.stat().st_size for p in Path(".sndocs/site").rglob("*") if p.is_file())
+        assert minified_bytes < plain_bytes
+
+
 def test_all_reports_a_clear_error_when_fetch_fails(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

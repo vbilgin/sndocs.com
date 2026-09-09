@@ -19,6 +19,10 @@ dependencies = [
     "Markdown>=3.7",
     "pymdown-extensions>=10",
     "pagefind[extended]>=1.5",
+    # Optional `sndocs build --minify` post-render pass (issue #32): re-emits the
+    # rendered site's HTML smaller. The `sndocs.minify` module owns the one
+    # conservative option set; `sndocs.minify_check` (#33) imports it from there.
+    "minify-html>=0.16",
 ]
 
 [project.optional-dependencies]
