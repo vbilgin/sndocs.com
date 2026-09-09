@@ -50,6 +50,7 @@ BLOCK_IN_CELL_RE = re.compile(
 MARKDOWN_BLOCK_IN_CELL_RE = re.compile(r"^\s*(?:[-+*]|\d+[.)])\s+|^\s{0,3}#{1,6}\s+|^\s*(```|~~~)", re.MULTILINE)
 FENCE_RE = re.compile(r"^(?P<indent> {0,3})(?P<fence>`{3,}|~{3,})(?P<rest>.*)$")
 ATTRIBUTE_RE = re.compile(r"(?P<name>[A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*(?P<quote>['\"])(?P<value>.*?)(?P=quote)")
+DELIMITER_CELL_RE = re.compile(r"^:?-+:?$")
 
 REPORT_FILENAME = "normalization-report.json"
 MANIFEST_FILENAME = "normalization-manifest.json"
@@ -370,13 +371,62 @@ def convert_simple_tables(chunk: str, md: MarkdownIt) -> tuple[str, Counter[str]
     return TABLE_RE.sub(replace, chunk), stats
 
 
+def pipe_row_cells(line: str) -> list[str]:
+    """Cells of a `| a | b |`-style pipe-table row (both borders required), or
+    `[]` if `line` is not a bordered pipe row. Escaped `\\|` stays inside a cell."""
+    stripped = line.strip()
+    if len(stripped) < 2 or not (stripped.startswith("|") and stripped.endswith("|")):
+        return []
+    return [cell.strip() for cell in re.split(r"(?<!\\)\|", stripped)[1:-1]]
+
+
+def repair_pipe_table_captions(chunk: str) -> tuple[str, int]:
+    """Split a single-column caption row glued directly onto the header of a pipe
+    table by inserting a blank line, so Python-Markdown's stricter `tables`
+    extension still recognises the table (markdown-it-py already renders the two
+    as separate blocks; ADR 0001 finding 3a). Only the unambiguous shape is
+    touched: a lone non-delimiter `| caption |` row that is not itself preceded
+    by a pipe-table row, immediately above a multi-column header whose column
+    count matches its delimiter row. Any other ragged shape is left as-is rather
+    than guessed at."""
+    lines = chunk.split("\n")
+    out: list[str] = []
+    count = 0
+    for index, line in enumerate(lines):
+        out.append(line)
+        if index + 2 >= len(lines):
+            continue
+        caption = pipe_row_cells(line)
+        if len(caption) != 1 or not caption[0] or DELIMITER_CELL_RE.match(caption[0]):
+            continue
+        if index > 0 and pipe_row_cells(lines[index - 1]):
+            continue  # mid-table, not a caption sitting at a block boundary
+        header = pipe_row_cells(lines[index + 1])
+        delimiter = pipe_row_cells(lines[index + 2])
+        if len(header) < 2 or len(delimiter) != len(header):
+            continue
+        if not all(DELIMITER_CELL_RE.match(cell) for cell in delimiter):
+            continue
+        out.append("")
+        count += 1
+    return "\n".join(out), count
+
+
 def repair_table_boundaries(chunk: str) -> tuple[str, Counter[str]]:
     repaired, pipe_count = re.subn(r"</table>[ \t]*\|", "</table>\n\n|", chunk, flags=re.IGNORECASE)
     repaired, fence_count = re.subn(r"</table>[ \t]*(?=`{3,}|~{3,})", "</table>\n\n", repaired, flags=re.IGNORECASE)
+    repaired, fence_newline_count = re.subn(
+        # Spaces-only indent, matching `FENCE_RE`: a leading tab is 4 columns, i.e.
+        # indented code, not a fence.
+        r"</table>[ \t]*\n(?= {0,3}(?:`{3,}|~{3,}))", "</table>\n\n", repaired, flags=re.IGNORECASE
+    )
+    repaired, caption_count = repair_pipe_table_captions(repaired)
     return repaired, Counter(
         {
             "table_pipe_boundaries_repaired": pipe_count,
             "table_fence_boundaries_repaired": fence_count,
+            "table_fence_newline_boundaries_repaired": fence_newline_count,
+            "pipe_table_caption_rows_split": caption_count,
         }
     )
 
