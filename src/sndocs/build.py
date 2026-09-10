@@ -16,17 +16,59 @@ into a spurious top nav entry.
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import sys
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import yaml
 from mkdocs.commands.build import build as mkdocs_build
 from mkdocs.config import load_config
 
-from sndocs.minify import MinifyReport, minify_site
+from sndocs.minify import MinifyReport, html_files_in, minify_site
 
 NavEntry = dict[str, "str | list[NavEntry]"]
+
+
+class BuildObserver:
+    """Progress and notification hooks for `build_site`, defaulting to silence.
+
+    `sndocs.cli` passes a subclass backed by the shared `Reporter` (issue #49) so
+    a `build` run announces each phase, shows a real bar for the minify pass, and
+    hides MkDocs' `logging` chatter and Pagefind's stdout unless asked for them
+    with `-v`. Direct callers and tests get this no-op base and see nothing.
+    Keeping the protocol here means `sndocs.build` never imports `rich` or
+    `sndocs.reporter` (ADR 0004)."""
+
+    #: True when MkDocs' `logging` output and Pagefind's stdout should be routed
+    #: back through `tool_line` rather than swallowed — i.e. the run is at `-v` or
+    #: higher.
+    surfaces_tool_output: bool = False
+
+    @contextmanager
+    def phase(self, label: str) -> Iterator[None]:
+        """Wrap one opaque build phase (nav walk, MkDocs render, Pagefind index)
+        in an indeterminate spinner with an elapsed timer."""
+        yield
+
+    @contextmanager
+    def minify_progress(self, total: int) -> Iterator[Callable[..., None]]:
+        """Wrap the minify pass in a determinate progress bar over `total`
+        files. Yields a tick to call once per finished file."""
+        yield lambda *_args, **_kwargs: None
+
+    def tool_line(self, line: str) -> None:
+        """Surface one line of MkDocs/Pagefind output. Only called when
+        `surfaces_tool_output` is true — i.e. at `-v` and above, where INFO-level
+        chatter is wanted too."""
+
+    def tool_warning(self, line: str) -> None:
+        """Surface one MkDocs WARNING/ERROR line as a grouped non-fatal warning.
+        Called at every verbosity except `-v`+ (where `tool_line` already carries
+        it): a broken internal link or a missing nav target must not vanish just
+        because the INFO chatter around it is hidden."""
 
 
 def _title_from_front_matter(path: Path) -> str | None:
@@ -93,11 +135,15 @@ class PagefindIndexingFailed(Exception):
     """Raised when the Pagefind subprocess exits non-zero; carries its stderr."""
 
 
-def run_pagefind(site_dir: Path) -> None:
+def run_pagefind(site_dir: Path, *, on_output: Callable[[str], None] | None = None) -> None:
     """Indexes the rendered `site_dir` in place with Pagefind, invoked as a subprocess
     (not the `pagefind.service`/`pagefind.index` Python API) against the final HTML
     output. Also emits the `pagefind-ui` widget assets into `site_dir/pagefind/`,
-    which the `overrides/main.html` theme override wires up as the site's search box."""
+    which the `overrides/main.html` theme override wires up as the site's search box.
+
+    Pagefind's stdout is always captured; `on_output`, if given, is called once
+    per non-blank line of it so a verbose run can surface the index summary
+    (issue #49). Its stderr is still only surfaced on failure."""
     result = subprocess.run(
         [sys.executable, "-m", "pagefind", "--site", str(site_dir)],
         capture_output=True,
@@ -105,6 +151,53 @@ def run_pagefind(site_dir: Path) -> None:
     )
     if result.returncode != 0:
         raise PagefindIndexingFailed(result.stderr.strip() or result.stdout.strip())
+    if on_output is not None:
+        for line in result.stdout.splitlines():
+            if line.strip():
+                on_output(line)
+
+
+@contextmanager
+def _routed_mkdocs_logging(observer: BuildObserver) -> Iterator[None]:
+    """Take over the ``mkdocs`` logger for the duration of the render so its
+    output goes through `observer` instead of MkDocs' default stderr path.
+
+    Nothing in this project configures that logger, so by default its records
+    propagate to the root logger's last-resort handler (WARNING+ to stderr). We
+    pin `propagate` off and attach one routing handler:
+
+    * at `-v`+ (`surfaces_tool_output`): every record from INFO up goes to
+      `tool_line`;
+    * otherwise: INFO/DEBUG chatter is dropped, but WARNING/ERROR still reaches
+      the user via `tool_warning` (grouped) — suppressing the noise must not
+      also hide a broken-link or missing-file diagnostic.
+
+    The logger is restored exactly as it was on exit."""
+    logger = logging.getLogger("mkdocs")
+    previous_level = logger.level
+    previous_propagate = logger.propagate
+    verbose = observer.surfaces_tool_output
+    floor = logging.INFO if verbose else logging.WARNING
+
+    class _Route(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            message = f"mkdocs: {record.getMessage()}"
+            if verbose:
+                observer.tool_line(message)
+            else:
+                observer.tool_warning(message)
+
+    handler = _Route()
+    handler.setLevel(floor)
+    logger.addHandler(handler)
+    logger.propagate = False
+    logger.setLevel(floor)
+    try:
+        yield
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(previous_level)
+        logger.propagate = previous_propagate
 
 
 def build_site(
@@ -114,6 +207,7 @@ def build_site(
     *,
     minify: bool = False,
     minify_workers: int | None = None,
+    observer: BuildObserver | None = None,
 ) -> MinifyReport | None:
     """Render `docs_dir` into `site_dir` with MkDocs + Material, using `config_file`
     for theme/site settings and a freshly computed nav, then index the rendered site
@@ -124,11 +218,43 @@ def build_site(
     `minify-html` between the MkDocs render and Pagefind indexing (the `pagefind/`
     directory does not exist yet, so the walk needs no exclusions), parallelised
     across `minify_workers` processes (default: CPU count). Returns the
-    `MinifyReport` in that case, `None` otherwise."""
+    `MinifyReport` in that case, `None` otherwise.
+
+    `observer` receives per-phase and per-file progress callbacks (issue #49);
+    the default no-op `BuildObserver` renders nothing, so a direct caller sees
+    the same silent behaviour as before."""
+    observer = observer or BuildObserver()
     if not docs_dir.is_dir():
         raise FileNotFoundError(f"{docs_dir} does not exist.")
-    config = load_config(str(config_file), nav=build_nav(docs_dir), site_dir=str(site_dir))
-    mkdocs_build(config)
-    report = minify_site(site_dir, workers=minify_workers) if minify else None
-    run_pagefind(site_dir)
+
+    with observer.phase("nav walk"):
+        nav = build_nav(docs_dir)
+    config = load_config(str(config_file), nav=nav, site_dir=str(site_dir))
+
+    with observer.phase("MkDocs render"), _routed_mkdocs_logging(observer):
+        mkdocs_build(config)
+
+    report = _minify_phase(site_dir, minify_workers, observer) if minify else None
+
+    with observer.phase("Pagefind index"):
+        run_pagefind(
+            site_dir,
+            on_output=observer.tool_line if observer.surfaces_tool_output else None,
+        )
     return report
+
+
+def _minify_phase(
+    site_dir: Path, minify_workers: int | None, observer: BuildObserver
+) -> MinifyReport:
+    """Run the minify pass under `observer`'s determinate progress bar. The one
+    walk of the rendered HTML here sizes the bar and is handed straight to
+    `minify_site`, so the pass is not walked twice."""
+    files = html_files_in(site_dir)
+    with observer.minify_progress(len(files)) as tick:
+        return minify_site(
+            site_dir,
+            workers=minify_workers,
+            files=files,
+            on_progress=lambda _result: tick(),
+        )

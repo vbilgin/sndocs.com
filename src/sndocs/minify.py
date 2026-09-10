@@ -13,13 +13,14 @@ to a tally, and surfaced by the caller; the build still succeeds.
 
 from __future__ import annotations
 
-import multiprocessing
 import os
-from concurrent.futures import ProcessPoolExecutor
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import minify_html
+
+from sndocs.parallel import parallel_map
 
 # The one conservative minify profile, defined here so `sndocs.minify_check`
 # (#33) imports it rather than keeping its own copy. Every keyword `minify-html`
@@ -119,6 +120,10 @@ def _minify_path(absolute: Path, site_root: Path) -> dict[str, object]:
     }
 
 
+def _ignore_result(_result: dict[str, object]) -> None:
+    """The `on_progress` used when the caller passes none."""
+
+
 _site_root: Path
 
 
@@ -131,10 +136,38 @@ def _minify_one_worker(relative_text: str) -> dict[str, object]:
     return _minify_path(_site_root / relative_text, _site_root)
 
 
-def minify_site(site_dir: Path, workers: int | None = None) -> MinifyReport:
+def html_files_in(site_dir: Path) -> list[Path]:
+    """Every ``*.html`` file under `site_dir`, as paths relative to it, in a
+    stable order. Shared by `minify_site` and the caller sizing its progress bar
+    (issue #49) so both see the same file set."""
+    site_dir = site_dir.resolve()
+    return sorted(
+        (p.relative_to(site_dir) for p in site_dir.rglob("*.html") if p.is_file()),
+        key=lambda p: p.as_posix(),
+    )
+
+
+def minify_site(
+    site_dir: Path,
+    workers: int | None = None,
+    *,
+    on_progress: Callable[[dict[str, object]], None] | None = None,
+    files: list[Path] | None = None,
+) -> MinifyReport:
     """Minify every ``*.html`` file under `site_dir` in place, parallelised across
     `workers` processes (default: available CPU count). Returns a `MinifyReport`;
-    files that raise while minifying are left untouched and recorded in it."""
+    files that raise while minifying are left untouched and recorded in it.
+
+    `on_progress`, if given, is called once with each per-file result dict as
+    that file finishes — in completion order under the process pool, in walk
+    order when run serially — so a caller can advance a live progress bar on
+    actual completions (issue #49). The shared `sndocs.parallel.parallel_map`
+    helper drives the parallel path, replacing the old
+    `executor.map(..., chunksize=16)` that only surfaced whole chunks.
+
+    `files` is the pre-walked HTML file set (paths relative to `site_dir`); pass
+    it when the caller already listed the tree — e.g. to size a progress bar —
+    so the pass is not walked twice. When omitted, `minify_site` walks it."""
     site_dir = site_dir.resolve()
     if not site_dir.is_dir():
         raise FileNotFoundError(f"{site_dir} does not exist.")
@@ -142,23 +175,24 @@ def minify_site(site_dir: Path, workers: int | None = None) -> MinifyReport:
     if workers < 1:
         raise ValueError("workers must be at least 1")
 
-    html_files = sorted(
-        (p.relative_to(site_dir) for p in site_dir.rglob("*.html") if p.is_file()),
-        key=lambda p: p.as_posix(),
-    )
+    html_files = html_files_in(site_dir) if files is None else files
+    tick = on_progress if on_progress is not None else _ignore_result
 
     if workers == 1 or len(html_files) <= 1:
-        results = [_minify_path(site_dir / p, site_dir) for p in html_files]
+        results: list[dict[str, object]] = []
+        for relative in html_files:
+            result = _minify_path(site_dir / relative, site_dir)
+            results.append(result)
+            tick(result)
     else:
-        with ProcessPoolExecutor(
-            max_workers=workers,
-            mp_context=multiprocessing.get_context("fork"),
+        results = parallel_map(
+            _minify_one_worker,
+            [p.as_posix() for p in html_files],
+            workers=workers,
+            on_result=tick,
             initializer=_init_worker,
             initargs=(str(site_dir),),
-        ) as executor:
-            results = list(
-                executor.map(_minify_one_worker, (p.as_posix() for p in html_files), chunksize=16)
-            )
+        )
 
     report = MinifyReport()
     for result in results:
