@@ -188,6 +188,13 @@ def test_serve_announces_the_url_on_stdout_and_signs_off(serve_workdir: Path, in
     assert "serve: stopped" in result.stdout
 
 
+def test_serve_honours_the_color_choice_and_still_announces(serve_workdir: Path, instant_serve: None) -> None:
+    result = CliRunner().invoke(cli, ["serve", "--color", "never"])
+
+    assert result.exit_code == 0, result.output
+    assert "serve: serving" in result.stdout
+
+
 def test_serve_quiet_suppresses_the_announcement(serve_workdir: Path, instant_serve: None) -> None:
     result = CliRunner().invoke(cli, ["serve", "-q"])
 

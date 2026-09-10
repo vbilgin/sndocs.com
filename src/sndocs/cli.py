@@ -374,6 +374,10 @@ def serve(ctx: click.Context, port: int) -> None:
         )
         reporter.print_exception(exc)
         raise SystemExit(1) from exc
+    except Exception as exc:
+        reporter.error("Serve failed", f"the static server stopped unexpectedly: {exc}")
+        reporter.print_exception(exc)
+        raise SystemExit(1) from exc
     reporter.summary("serve: stopped")
 
 
@@ -418,13 +422,10 @@ def run_all(ctx: click.Context, minify: bool, minify_workers: int | None) -> Non
 
 
 def _format_duration(seconds: float) -> str:
-    """Render an elapsed span for the `all` timing breakdown: ``38s``, ``1m02s``,
-    ``4m12s``, ``1h05m00s`` — seconds zero-padded once minutes are shown."""
-    total = round(seconds)
-    hours, remainder = divmod(total, 3600)
-    minutes, secs = divmod(remainder, 60)
-    if hours:
-        return f"{hours}h{minutes:02d}m{secs:02d}s"
+    """Render an elapsed span for the `all` timing breakdown: ``38s`` under a
+    minute, ``1m02s`` / ``4m12s`` above one — seconds zero-padded once minutes
+    are shown."""
+    minutes, secs = divmod(round(seconds), 60)
     if minutes:
         return f"{minutes}m{secs:02d}s"
     return f"{secs}s"
