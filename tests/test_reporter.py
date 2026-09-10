@@ -238,6 +238,19 @@ def test_log_streams_a_line_at_verbose_but_is_silent_at_normal() -> None:
     assert "residual escape inside a raw HTML table" in verbose_buf.getvalue()
 
 
+def test_step_prints_the_label_on_its_own_line_at_normal_and_verbose() -> None:
+    for level in (Verbosity.normal, Verbosity.verbose):
+        reporter, buffer = make_reporter(level, force_terminal=False)
+        reporter.step("[1/3] fetch")
+        assert buffer.getvalue().splitlines() == ["[1/3] fetch"]
+
+
+def test_step_is_silent_at_quiet() -> None:
+    reporter, buffer = make_reporter(Verbosity.quiet, force_terminal=False)
+    reporter.step("[1/3] fetch")
+    assert buffer.getvalue() == ""
+
+
 def test_details_renders_a_titled_block_of_lines() -> None:
     reporter, buffer = make_reporter(Verbosity.normal, force_terminal=False)
 
