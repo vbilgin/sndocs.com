@@ -2,7 +2,15 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
+from sndocs import __version__
 from sndocs.cli import cli
+
+
+def test_cli_reports_version() -> None:
+    result = CliRunner().invoke(cli, ["--version"])
+
+    assert result.exit_code == 0
+    assert __version__ in result.output
 
 
 def test_cli_lists_all_subcommands() -> None:

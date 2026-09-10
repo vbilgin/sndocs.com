@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sndocs"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Fetch, normalize, and build a local ServiceNowDocs site with MkDocs."
 requires-python = ">=3.10"
 dependencies = [
@@ -36,6 +36,9 @@ dev = [
 
 [project.scripts]
 sndocs = "sndocs.cli:cli"
+
+[tool.setuptools.dynamic]
+version = { attr = "sndocs.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

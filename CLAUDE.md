@@ -6,8 +6,9 @@ Guidance for working in this repository.
 
 A Python CLI (`sndocs`) that fetches the ServiceNowDocs Markdown corpus,
 normalizes it, and builds a static docs site with MkDocs + Material for
-MkDocs, served locally. Nothing is implemented yet — see the issue tracker
-for the v1 spec before building anything.
+MkDocs, served locally. v1 (issue #5) is implemented: `sndocs fetch`,
+`normalize`, `build`, `serve`, and `all`. See `README.md` for usage and the
+issue tracker for scope.
 
 ## Ground rules
 
