@@ -25,6 +25,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from datetime import timedelta
 from enum import IntEnum
 from pathlib import Path
 
@@ -156,9 +157,9 @@ class Reporter:
         """Determinate progress over a known `total`. Yields a `Tick` — call it
         once per finished item. At ``normal`` on a terminal this is a live bar
         with count, percentage, elapsed and ETA columns; off a terminal it is a
-        throttled plain ``done/total`` line with a guaranteed final ``total/total
-        (100%)``; at ``verbose`` / ``debug`` it is one line per item; at
-        ``quiet`` it is silent."""
+        throttled plain ``done/total (pct%) H:MM:SS`` line with a guaranteed
+        final ``total/total (100%)``; at ``verbose`` / ``debug`` it is one line
+        per item; at ``quiet`` it is silent."""
         if self.verbosity is Verbosity.quiet:
             yield _noop_tick
             return
@@ -187,11 +188,13 @@ class Reporter:
     def _plain_progress(self, description: str, total: int) -> Iterator[Tick]:
         done = 0
         last = 0.0
+        started = time.monotonic()
 
         def emit() -> None:
             shown = min(done, total) if total else done
             pct = 100 if total == 0 else round(shown * 100 / total)
-            self._print(f"{description}: {shown}/{total} ({pct}%)")
+            elapsed = timedelta(seconds=int(time.monotonic() - started))
+            self._print(f"{description}: {shown}/{total} ({pct}%) {elapsed}")
 
         def tick(item: str | None = None) -> None:
             nonlocal done, last
@@ -256,6 +259,18 @@ class Reporter:
         finally:
             self._print(f"{label}: done ({time.monotonic() - start:.1f}s)")
 
+    # -- verbose log line --------------------------------------------------
+
+    def log(self, message: str) -> None:
+        """Emit `message` as a plain diagnostic line immediately, but only from
+        ``verbose`` up — the level at which the bar is already replaced by a
+        stream of per-item lines, so an inline note fits. Below ``verbose`` it is
+        dropped; the grouped `warn` / `flush_warnings` path is what feeds
+        ``normal`` and a captured log."""
+        if self.verbosity < Verbosity.verbose:
+            return
+        self._print(message)
+
     # -- warnings -----------------------------------------------------------
 
     def warn(self, message: str) -> None:
@@ -277,6 +292,23 @@ class Reporter:
             panel_body="\n".join(f"• {message}" for message in pending),
             plain_heading=f"{heading}:",
             plain_lines=[f"WARNING: {message}" for message in pending],
+        )
+
+    # -- post-run detail block -------------------------------------------------
+
+    def details(self, heading: str, lines: list[str]) -> None:
+        """Emit a styled, non-alarming information block — a `rich.Panel` on a
+        terminal, a plain ``heading:`` followed by bullet lines off one. For
+        post-run summaries like `normalize`'s tally of what it repaired.
+        Suppressed at ``quiet``, and a no-op with no `lines`."""
+        if self.verbosity is Verbosity.quiet or not lines:
+            return
+        self._emit_block(
+            title=heading,
+            border_style="cyan",
+            panel_body="\n".join(f"• {line}" for line in lines),
+            plain_heading=f"{heading}:",
+            plain_lines=[f"  {line}" for line in lines],
         )
 
     # -- fatal error --------------------------------------------------------
@@ -314,7 +346,9 @@ class Reporter:
         ``-q``)."""
         if self.verbosity is Verbosity.quiet:
             return
-        self.out_console.print(message, markup=False, highlight=False)
+        # `soft_wrap` so a long path in the summary is never hard-wrapped onto a
+        # second line — anything parsing these lines expects exactly one.
+        self.out_console.print(message, markup=False, highlight=False, soft_wrap=True)
 
     # -- internals --------------------------------------------------------------
 

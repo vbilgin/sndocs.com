@@ -73,6 +73,18 @@ def test_determinate_progress_uses_the_plain_path_off_a_terminal() -> None:
     assert reporter.uses_progress_bar is False
 
 
+def test_plain_progress_line_carries_an_elapsed_clock() -> None:
+    reporter, buffer = make_reporter(Verbosity.normal, force_terminal=False)
+
+    with reporter.progress("normalize", total=3) as tick:
+        for _ in range(3):
+            tick()
+
+    # e.g. `normalize: 3/3 (100%) 0:00:00` — H:MM:SS elapsed, like the ticket's
+    # `normalize: 1204/2560 (47%) 0:00:12`.
+    assert re.search(r"normalize: 3/3 \(100%\) \d+:\d{2}:\d{2}", buffer.getvalue())
+
+
 def test_verbose_progress_prints_one_line_per_item_instead_of_a_bar() -> None:
     reporter, buffer = make_reporter(Verbosity.verbose, force_terminal=True)
 
@@ -199,6 +211,40 @@ def test_flush_warnings_is_a_noop_with_nothing_pending() -> None:
     reporter.flush_warnings()
 
     assert buffer.getvalue() == ""
+
+
+# -- verbose log line + detail block ---------------------------------------
+
+
+def test_log_streams_a_line_at_verbose_but_is_silent_at_normal() -> None:
+    at_normal, normal_buf = make_reporter(Verbosity.normal, force_terminal=False)
+    at_normal.log("residual escape inside a raw HTML table")
+    assert normal_buf.getvalue() == ""
+
+    at_verbose, verbose_buf = make_reporter(Verbosity.verbose, force_terminal=False)
+    at_verbose.log("residual escape inside a raw HTML table")
+    assert "residual escape inside a raw HTML table" in verbose_buf.getvalue()
+
+
+def test_details_renders_a_titled_block_of_lines() -> None:
+    reporter, buffer = make_reporter(Verbosity.normal, force_terminal=False)
+
+    reporter.details("Repairs applied", ["redundant escapes removed: 12", "fences closed: 3"])
+
+    output = buffer.getvalue()
+    assert "Repairs applied:" in output
+    assert "redundant escapes removed: 12" in output
+    assert "fences closed: 3" in output
+
+
+def test_details_is_silent_when_quiet_or_empty() -> None:
+    quiet, quiet_buf = make_reporter(Verbosity.quiet, force_terminal=False)
+    quiet.details("Repairs applied", ["something: 1"])
+    assert quiet_buf.getvalue() == ""
+
+    normal, normal_buf = make_reporter(Verbosity.normal, force_terminal=False)
+    normal.details("Repairs applied", [])
+    assert normal_buf.getvalue() == ""
 
 
 # -- fatal error -------------------------------------------------------------

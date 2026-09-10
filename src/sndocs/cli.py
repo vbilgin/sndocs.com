@@ -9,7 +9,13 @@ from sndocs import __version__
 from sndocs.build import PagefindIndexingFailed, build_site
 from sndocs.fetch import fetch_repo
 from sndocs.minify import MinifyReport
-from sndocs.normalize import NormalizationFailed, normalize_corpus
+from sndocs.normalize import (
+    REPORT_FILENAME,
+    NormalizationFailed,
+    discover,
+    normalize_corpus,
+    repair_summary_lines,
+)
 from sndocs.reporter import Reporter, Verbosity
 from sndocs.serve import DEFAULT_PORT, serve_site
 
@@ -150,19 +156,72 @@ def fetch() -> None:
     default=None,
     help="Parallel workers (default: available CPU count).",
 )
-def normalize(workers: int | None) -> None:
+@click.pass_context
+def normalize(ctx: click.Context, workers: int | None) -> None:
     """Normalize .sndocs/repo/ into .sndocs/normalized/."""
+    reporter: Reporter = ctx.obj
     if not REPO_DIR.is_dir():
         raise click.ClickException(f"{REPO_DIR} does not exist. Run `sndocs fetch` first, or populate it manually.")
+
+    # One extra directory walk to size the bar before `normalize_corpus` starts;
+    # negligible next to the per-file markdown parsing it feeds.
+    total = len(discover(REPO_DIR))
     try:
-        report = normalize_corpus(REPO_DIR, NORMALIZED_DIR, workers=workers)
+        with reporter.progress("normalize", total=total) as tick:
+
+            def on_progress(file_result: dict[str, object]) -> None:
+                path = str(file_result["path"])
+                if reporter.verbosity is Verbosity.debug:
+                    seconds = float(file_result.get("seconds", 0.0) or 0.0)
+                    tick(f"{path} ({seconds * 1000:.0f}ms)")
+                elif reporter.verbosity is Verbosity.verbose:
+                    tick(path)
+                else:
+                    tick()
+                for warning in _normalize_file_warnings(file_result):
+                    if reporter.verbosity >= Verbosity.verbose:
+                        reporter.log(f"WARNING: {warning}")
+                    else:
+                        reporter.warn(warning)
+
+            report = normalize_corpus(
+                REPO_DIR, NORMALIZED_DIR, workers=workers, on_progress=on_progress
+            )
     except NormalizationFailed as exc:
-        raise click.ClickException(str(exc)) from exc
+        failed = exc.report["result"]["failed"]
+        reporter.error(
+            "Normalization failed",
+            f"{failed} file(s) failed normalization invariants.",
+            report_path=NORMALIZED_DIR / REPORT_FILENAME,
+        )
+        reporter.print_exception(exc)
+        raise SystemExit(1) from exc
+
     result = report["result"]
-    click.echo(
+    reporter.details(
+        "Repairs applied (mechanical, render-preserving)",
+        repair_summary_lines(result["transformations"]),
+    )
+    reporter.flush_warnings("Warnings")
+    reporter.summary(
         f"normalize: {result['succeeded']}/{result['total_files']} files normalized "
         f"into {NORMALIZED_DIR} ({result['changed_files']} changed)"
     )
+
+
+def _normalize_file_warnings(file_result: dict[str, object]) -> list[str]:
+    """Non-fatal notes for one normalized file: a raw HTML table that stayed raw
+    because it is not a simple rectangular table, or cosmetic cleanup skipped to
+    keep the rendered output identical. Neither fails the file."""
+    stats = file_result.get("stats") or {}
+    path = file_result["path"]
+    notes: list[str] = []
+    remaining = stats.get("raw_tables_remaining", 0)
+    if remaining:
+        notes.append(f"{path}: {remaining} raw HTML table(s) left unconverted (not a simple rectangular table)")
+    if stats.get("render_changing_cleanup_rejected", 0):
+        notes.append(f"{path}: cosmetic cleanup skipped to preserve the rendered output")
+    return notes
 
 
 @cli.command()
