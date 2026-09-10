@@ -134,7 +134,7 @@ def test_all_shares_one_reporter_across_its_child_steps(
 
     seen: list[Reporter | None] = []
 
-    def _fake_fetch(repo_dir: Path) -> None:
+    def _fake_fetch(repo_dir: Path, **_kwargs: object) -> None:
         seen.append(click.get_current_context().obj)
         Path(repo_dir).mkdir(parents=True, exist_ok=True)
 

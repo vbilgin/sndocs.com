@@ -233,10 +233,16 @@ class Reporter:
     # -- indeterminate spinner ------------------------------------------------
 
     @contextmanager
-    def spinner(self, label: str) -> Iterator[None]:
+    def spinner(self, label: str, *, done_label: str | None = None) -> Iterator[None]:
         """Indeterminate work with an elapsed timer. A live spinner at ``normal``
         on a terminal; plain ``label...`` / ``label: done (Ns)`` lines otherwise;
-        silent at ``quiet``."""
+        silent at ``quiet``.
+
+        ``done_label`` overrides the text on the plain completion line only, for
+        the case where the start line names the sub-operation (``fetch:
+        cloning``) but the finish line should read against the command
+        (``fetch: done (Ns)``). It has no effect on the live-spinner path, where
+        the line is erased on exit."""
         if self.verbosity is Verbosity.quiet:
             yield
             return
@@ -257,7 +263,7 @@ class Reporter:
         try:
             yield
         finally:
-            self._print(f"{label}: done ({time.monotonic() - start:.1f}s)")
+            self._print(f"{done_label or label}: done ({time.monotonic() - start:.1f}s)")
 
     # -- verbose log line --------------------------------------------------
 

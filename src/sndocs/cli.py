@@ -1,3 +1,4 @@
+import shlex
 import subprocess
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -8,7 +9,7 @@ import click
 
 from sndocs import __version__
 from sndocs.build import BuildObserver, PagefindIndexingFailed, build_site
-from sndocs.fetch import fetch_repo
+from sndocs.fetch import FetchObserver, fetch_repo
 from sndocs.minify import MinifyReport
 from sndocs.normalize import (
     REPORT_FILENAME,
@@ -143,11 +144,48 @@ def cli(ctx: click.Context, verbose: int, quiet: bool, color: str) -> None:
     ctx.obj = Reporter.for_cli(Verbosity.from_flags(verbose, quiet), color=color)
 
 
+class _ReporterFetchObserver(FetchObserver):
+    """Routes `fetch_repo`'s spinner / verbosity hooks through the shared
+    `Reporter`: an elapsed-timer spinner over the clone-or-update, git's own
+    progress from `-v` up, and the exact git command lines at `-vv`."""
+
+    def __init__(self, reporter: Reporter) -> None:
+        self._reporter = reporter
+
+    @property
+    def surfaces_git_output(self) -> bool:
+        return self._reporter.shows_subprocess_output
+
+    @property
+    def logs_commands(self) -> bool:
+        return self._reporter.verbosity >= Verbosity.debug
+
+    @contextmanager
+    def phase(self, label: str) -> Iterator[None]:
+        with self._reporter.spinner(f"fetch: {label}", done_label="fetch"):
+            yield
+
+    def command(self, argv: list[str]) -> None:
+        self._reporter.log(f"$ {shlex.join(argv)}")
+
+
 @cli.command()
-def fetch() -> None:
+@click.pass_context
+def fetch(ctx: click.Context) -> None:
     """Clone or update the australia branch of ServiceNowDocs into .sndocs/repo/."""
-    fetch_repo(REPO_DIR)
-    click.echo(f"fetch: synced to {REPO_DIR}")
+    reporter: Reporter = ctx.obj
+    try:
+        fetch_repo(REPO_DIR, observer=_ReporterFetchObserver(reporter))
+    except subprocess.CalledProcessError as exc:
+        reporter.error(
+            "Fetch failed",
+            f"git exited {exc.returncode} while syncing the corpus into {REPO_DIR}. "
+            "Check network access to the ServiceNowDocs remote and that the "
+            "directory is writable.",
+        )
+        reporter.print_exception(exc)
+        raise SystemExit(1) from exc
+    reporter.summary(f"fetch: synced to {REPO_DIR}")
 
 
 @cli.command()
