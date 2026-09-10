@@ -5,6 +5,7 @@ from pathlib import Path
 
 import click
 
+from sndocs import __version__
 from sndocs.build import PagefindIndexingFailed, build_site
 from sndocs.fetch import fetch_repo
 from sndocs.minify import MinifyReport
@@ -39,6 +40,7 @@ def minify_options(func: Callable[..., None]) -> Callable[..., None]:
 
 
 @click.group()
+@click.version_option(__version__, "-V", "--version", prog_name="sndocs")
 def cli() -> None:
     """Fetch, normalize, and build a local ServiceNowDocs site."""
 
