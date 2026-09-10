@@ -124,9 +124,10 @@ def test_all_reports_a_clear_error_when_fetch_fails(
         result = runner.invoke(cli, ["all"])
 
         assert result.exit_code != 0
-        # A clean ClickException, not a raw CalledProcessError traceback.
+        # The failing fetch step renders its own styled error and stops the
+        # pipeline (issue #50) — not a raw CalledProcessError traceback.
         assert not isinstance(result.exception, subprocess.CalledProcessError)
-        assert "pipeline step failed" in result.output
+        assert "ERROR: Fetch failed" in result.output
         assert not Path(".sndocs/normalized").exists()
         assert not Path(".sndocs/site").exists()
 

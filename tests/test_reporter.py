@@ -164,6 +164,18 @@ def test_quiet_spinner_emits_nothing() -> None:
     assert buffer.getvalue() == ""
 
 
+def test_spinner_done_label_overrides_only_the_completion_line() -> None:
+    reporter, buffer = make_reporter(Verbosity.normal, force_terminal=False, no_color=False)
+
+    with reporter.spinner("fetch: cloning", done_label="fetch"):
+        pass
+
+    output = buffer.getvalue()
+    assert "fetch: cloning..." in output
+    assert re.search(r"fetch: done \(\d+\.\d+s\)", output)
+    assert "cloning: done" not in output
+
+
 # -- warnings ------------------------------------------------------------
 
 
