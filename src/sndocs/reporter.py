@@ -265,6 +265,20 @@ class Reporter:
         finally:
             self._print(f"{done_label or label}: done ({time.monotonic() - start:.1f}s)")
 
+    # -- pipeline step label ------------------------------------------------
+
+    def step(self, label: str) -> None:
+        """Announce one step of a multi-command pipeline (`all`) — a single line
+        like ``[1/3] fetch``, printed to the diagnostics stream just above the
+        child command's own bar / spinner. Bold on a terminal, plain off one,
+        and suppressed entirely at ``quiet``."""
+        if self.verbosity is Verbosity.quiet:
+            return
+        if self.console.is_terminal:
+            self.console.print(label, style="bold", markup=False, highlight=False)
+        else:
+            self._print(label)
+
     # -- verbose log line --------------------------------------------------
 
     def log(self, message: str) -> None:

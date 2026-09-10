@@ -1,15 +1,18 @@
 import os
 import re
 import shutil
+import socket
 import threading
 import time
 import urllib.error
 import urllib.request
+from contextlib import closing
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
+import sndocs.cli as cli_module
 import sndocs.serve as serve_module
 from sndocs.cli import cli
 
@@ -152,3 +155,77 @@ def test_serve_fails_cleanly_without_a_built_site(tmp_path: Path, monkeypatch: p
 
     assert result.exit_code != 0
     assert "sndocs build" in result.output
+
+
+# -- Seam 1: serve through the Reporter (issue #51) ------------------------
+
+
+class _FakeServer:
+    """Stands in for the bound `ThreadingHTTPServer` `serve_site` hands to
+    `on_ready`, so the announcement path can be exercised without a socket."""
+
+    server_address = ("127.0.0.1", 8000)
+
+
+@pytest.fixture
+def instant_serve(monkeypatch: pytest.MonkeyPatch):
+    """Replaces `serve_site` with a stub that fires `on_ready` once and returns —
+    as if the user hit Ctrl+C the moment the server came up."""
+
+    def _fake_serve(site_dir, port=8000, *, on_ready=None):
+        if on_ready is not None:
+            on_ready(_FakeServer())
+
+    monkeypatch.setattr(cli_module, "serve_site", _fake_serve)
+
+
+def test_serve_announces_the_url_on_stdout_and_signs_off(serve_workdir: Path, instant_serve: None) -> None:
+    result = CliRunner().invoke(cli, ["serve"])
+
+    assert result.exit_code == 0, result.output
+    assert "serve: serving" in result.stdout
+    assert "http://127.0.0.1:8000/" in result.stdout
+    assert "serve: stopped" in result.stdout
+
+
+def test_serve_honours_the_color_choice_and_still_announces(serve_workdir: Path, instant_serve: None) -> None:
+    result = CliRunner().invoke(cli, ["serve", "--color", "never"])
+
+    assert result.exit_code == 0, result.output
+    assert "serve: serving" in result.stdout
+
+
+def test_serve_quiet_suppresses_the_announcement(serve_workdir: Path, instant_serve: None) -> None:
+    result = CliRunner().invoke(cli, ["serve", "-q"])
+
+    assert result.exit_code == 0, result.output
+    assert result.output == ""
+    assert result.stderr == ""
+
+
+def test_serve_bind_failure_renders_a_styled_error_not_a_traceback(
+    serve_workdir: Path, free_port: int
+) -> None:
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as occupied:
+        occupied.bind(("127.0.0.1", free_port))
+        occupied.listen(1)
+
+        result = CliRunner().invoke(cli, ["serve", "--port", str(free_port)])
+
+    assert result.exit_code != 0
+    # Caught and rendered, not propagated as an uncaught OSError.
+    assert not isinstance(result.exception, OSError)
+    assert "ERROR: Serve failed" in result.output
+    assert f"could not bind localhost:{free_port}" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_serve_bind_failure_still_shown_under_quiet(serve_workdir: Path, free_port: int) -> None:
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as occupied:
+        occupied.bind(("127.0.0.1", free_port))
+        occupied.listen(1)
+
+        result = CliRunner().invoke(cli, ["serve", "--port", str(free_port), "-q"])
+
+    assert result.exit_code != 0
+    assert result.output.count("ERROR: Serve failed") == 1

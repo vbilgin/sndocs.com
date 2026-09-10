@@ -151,3 +151,59 @@ def test_all_stops_with_a_clear_error_when_a_step_fails(
         # fetch ran, but the failing normalize stopped the pipeline before build.
         assert Path(".sndocs/repo/markdown/category-one/index.md").is_file()
         assert not Path(".sndocs/site").exists()
+
+
+# -- Seam 1: all through the Reporter (issue #51) --------------------------
+
+
+def test_all_labels_each_step_and_prints_a_timing_breakdown(stubbed_remote: Path, tmp_path: Path) -> None:
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        _seed_site_config()
+
+        result = runner.invoke(cli, ["all"])
+        assert result.exit_code == 0, result.output
+
+        # A [n/3] label precedes each child, in pipeline order.
+        one = result.output.index("[1/3] fetch")
+        two = result.output.index("[2/3] normalize")
+        three = result.output.index("[3/3] build")
+        assert one < two < three
+
+        # The sign-off line survives, and a final timing breakdown follows it.
+        assert ".sndocs/site" in result.output.split("all:", 1)[1]
+        breakdown = re.search(
+            r"all: completed in \S+ \(fetch \S+ · normalize \S+ · build \S+\)", result.output
+        )
+        assert breakdown is not None, result.output
+
+
+def test_all_step_labels_and_breakdown_are_suppressed_under_quiet(stubbed_remote: Path, tmp_path: Path) -> None:
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        _seed_site_config()
+
+        result = runner.invoke(cli, ["all", "-q"])
+        assert result.exit_code == 0, result.output
+        assert result.output == ""
+        assert result.stderr == ""
+
+
+def test_all_stops_at_the_first_failing_step_before_labelling_the_next(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Point fetch at a path that isn't a git remote: the first step fails.
+    monkeypatch.setattr(fetch_module, "REMOTE_URL", str(tmp_path / "does-not-exist"))
+
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        _seed_site_config()
+
+        result = runner.invoke(cli, ["all"])
+
+        assert result.exit_code != 0
+        assert "[1/3] fetch" in result.output
+        assert "ERROR: Fetch failed" in result.output
+        # The pipeline stopped: no later step labelled, no timing breakdown.
+        assert "[2/3] normalize" not in result.output
+        assert "all: completed in" not in result.output

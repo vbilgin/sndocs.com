@@ -1,5 +1,6 @@
 import shlex
 import subprocess
+import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from http.server import ThreadingHTTPServer
@@ -341,27 +342,43 @@ def _report_minify(reporter: Reporter, report: MinifyReport | None) -> None:
 
 @cli.command()
 @click.option("--port", type=int, default=DEFAULT_PORT, show_default=True, help="Localhost port to bind.")
-def serve(port: int) -> None:
+@click.pass_context
+def serve(ctx: click.Context, port: int) -> None:
     """Serve the last built site from .sndocs/site/ on localhost.
 
     A plain static file server: no rebuild, no watch, no MkDocs. What it serves is
     exactly what the last `sndocs build` produced, search index included. Press
     Ctrl+C to stop.
     """
+    reporter: Reporter = ctx.obj
     if not SITE_DIR.is_dir():
-        raise click.ClickException(
-            f"{SITE_DIR} does not exist. Run `sndocs build` first, or populate it manually."
+        reporter.error(
+            "Serve failed",
+            f"{SITE_DIR} does not exist. Run `sndocs build` first, or populate it manually.",
         )
+        raise SystemExit(1)
 
     def _announce(server: ThreadingHTTPServer) -> None:
         bound_host, bound_port = server.server_address[:2]
-        click.echo(f"serve: serving {SITE_DIR} at http://{bound_host}:{bound_port}/ (press Ctrl+C to stop)")
+        reporter.summary(
+            f"serve: serving {SITE_DIR} at http://{bound_host}:{bound_port}/ (press Ctrl+C to stop)"
+        )
 
     try:
         serve_site(SITE_DIR, port=port, on_ready=_announce)
     except OSError as exc:
-        raise click.ClickException(f"could not bind localhost:{port}: {exc}") from exc
-    click.echo("serve: stopped")
+        reporter.error(
+            "Serve failed",
+            f"could not bind localhost:{port}: {exc}. Try another --port or free the "
+            "one in use.",
+        )
+        reporter.print_exception(exc)
+        raise SystemExit(1) from exc
+    except Exception as exc:
+        reporter.error("Serve failed", f"the static server stopped unexpectedly: {exc}")
+        reporter.print_exception(exc)
+        raise SystemExit(1) from exc
+    reporter.summary("serve: stopped")
 
 
 @cli.command(name="all")
@@ -379,13 +396,39 @@ def run_all(ctx: click.Context, minify: bool, minify_workers: int | None) -> Non
 
     `--minify` / `--minify-workers` are forwarded to the build step.
     """
-    try:
-        ctx.invoke(fetch)
-        ctx.invoke(normalize)
-        ctx.invoke(build, minify=minify, minify_workers=minify_workers)
-    except subprocess.CalledProcessError as exc:
-        raise click.ClickException(f"pipeline step failed: {exc}") from exc
-    click.echo(f"all: fetch + normalize + build complete; {SITE_DIR} ready for `sndocs serve`")
+    reporter: Reporter = ctx.obj
+    steps: list[tuple[str, Callable[[], None]]] = [
+        ("fetch", lambda: ctx.invoke(fetch)),
+        ("normalize", lambda: ctx.invoke(normalize)),
+        ("build", lambda: ctx.invoke(build, minify=minify, minify_workers=minify_workers)),
+    ]
+
+    # A failing step raises SystemExit (its own styled error already rendered by
+    # the child command, issues #48–#50); that propagates straight out here,
+    # stopping the pipeline before the next step and before the sign-off lines.
+    timings: list[tuple[str, float]] = []
+    run_started = time.monotonic()
+    for position, (label, run_step) in enumerate(steps, start=1):
+        reporter.step(f"[{position}/{len(steps)}] {label}")
+        step_started = time.monotonic()
+        run_step()
+        timings.append((label, time.monotonic() - step_started))
+
+    reporter.summary(f"all: fetch + normalize + build complete; {SITE_DIR} ready for `sndocs serve`")
+    breakdown = " · ".join(f"{name} {_format_duration(seconds)}" for name, seconds in timings)
+    reporter.summary(
+        f"all: completed in {_format_duration(time.monotonic() - run_started)} ({breakdown})"
+    )
+
+
+def _format_duration(seconds: float) -> str:
+    """Render an elapsed span for the `all` timing breakdown: ``38s`` under a
+    minute, ``1m02s`` / ``4m12s`` above one — seconds zero-padded once minutes
+    are shown."""
+    minutes, secs = divmod(round(seconds), 60)
+    if minutes:
+        return f"{minutes}m{secs:02d}s"
+    return f"{secs}s"
 
 
 if __name__ == "__main__":
