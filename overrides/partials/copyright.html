@@ -1,0 +1,27 @@
+{#-
+  Local copy of Material's footer copyright partial, rendered on every page.
+  Replaces the single plain-text `config.copyright` line with the full,
+  linked ServiceNow attribution and the independence / trademark notice.
+  The plain-text `copyright:` in mkdocs.yml stays as a fallback for any
+  context that bypasses this partial.
+  See docs/adr/0003-material-theme-customization.md and issue #42.
+-#}
+<div class="md-copyright">
+  <div class="md-copyright__highlight">
+    Documentation content &copy; ServiceNow, Inc., sourced from
+    <a href="https://github.com/ServiceNow/ServiceNowDocs" target="_blank" rel="noopener">ServiceNow/ServiceNowDocs</a>
+    and licensed under
+    <a href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener">Apache&nbsp;2.0</a>.
+  </div>
+  <div class="md-copyright__highlight">
+    sndocs is an independent project &mdash; not affiliated with, endorsed by, or
+    sponsored by ServiceNow, Inc. &ldquo;ServiceNow&rdquo; and ServiceNow
+    release-family names are trademarks of ServiceNow, Inc.
+  </div>
+  {% if not config.extra.generator == false %}
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  {% endif %}
+</div>

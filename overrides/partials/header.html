@@ -1,0 +1,103 @@
+{#-
+  Local copy of Material for MkDocs' partials/header.html.
+
+  Kept deliberately close to the stock template so a future Material release is
+  cheap to re-sync. Exactly two changes from upstream, both additions, both
+  tagged `sndocs:` below:
+
+    1. the site-name `{{ config.site_name }}` is wrapped in an `<a>` so the
+       lowercase "sndocs" wordmark links home (stock Material's only header
+       home link is the logo `<a>`, which the identity CSS hides — there is no
+       image / theme.icon.logo, per issue #42);
+    2. a static, CSS-only `<details class="sndocs-release">` "Release family:
+       Australia" selector, placed right after the wordmark span so it flows
+       beside it with no magic offset.
+
+  All styling — the wordmark, the selector, and the five-colour palette — is in
+  the inline `<style>` block in overrides/main.html.
+  `tests/cli/test_site_identity.py::test_vendored_header_tracks_installed_material`
+  fails if this copy drops an upstream line. See
+  docs/adr/0003-material-theme-customization.md.
+-#}
+{% set class = "md-header" %}
+{% if "navigation.tabs.sticky" in features %}
+  {% set class = class ~ " md-header--shadow md-header--lifted" %}
+{% elif "navigation.tabs" not in features %}
+  {% set class = class ~ " md-header--shadow" %}
+{% endif %}
+<header class="{{ class }}" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="{{ lang.t('header') }}">
+    <a href="{{ config.extra.homepage | d(nav.homepage.url, true) | url }}" title="{{ config.site_name | e }}" class="md-header__button md-logo" aria-label="{{ config.site_name }}" data-md-component="logo">
+      {% include "partials/logo.html" %}
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      {% set icon = config.theme.icon.menu or "material/menu" %}
+      {% include ".icons/" ~ icon ~ ".svg" %}
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            {#- sndocs: wordmark links home (the hidden logo <a> is the stock home link) -#}
+            <a class="sndocs-wordmark" href="{{ config.extra.homepage | d(nav.homepage.url, true) | url }}">{{ config.site_name }}</a>
+          </span>
+          {#- sndocs: static CSS-only "Release family" selector, beside the wordmark -#}
+          <details class="sndocs-release">
+            <summary class="sndocs-release__summary">
+              <span class="sndocs-release__caption">Release family</span>
+              <span class="sndocs-release__value">Australia</span>
+              <svg class="sndocs-release__chevron" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z" />
+              </svg>
+            </summary>
+            <div class="sndocs-release__menu" role="menu">
+              <span class="sndocs-release__item sndocs-release__item--current" role="menuitem" aria-current="true">
+                Australia
+              </span>
+            </div>
+          </details>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            {% if page.meta and page.meta.title %}
+              {{ page.meta.title }}
+            {% else %}
+              {{ page.title }}
+            {% endif %}
+          </span>
+        </div>
+      </div>
+    </div>
+    {% if config.theme.palette %}
+      {% if not config.theme.palette is mapping %}
+        {% include "partials/palette.html" %}
+      {% endif %}
+    {% endif %}
+    {% if not config.theme.palette is mapping %}
+      {% include "partials/javascripts/palette.html" %}
+    {% endif %}
+    {% if config.extra.alternate %}
+      {% include "partials/alternate.html" %}
+    {% endif %}
+    {% if "material/search" in config.plugins %}
+      {% set search = config.plugins["material/search"] | attr("config") %}
+      {% if search.enabled %}
+        <label class="md-header__button md-icon" for="__search">
+          {% set icon = config.theme.icon.search or "material/magnify" %}
+          {% include ".icons/" ~ icon ~ ".svg" %}
+        </label>
+        {% include "partials/search.html" %}
+      {% endif %}
+    {% endif %}
+    {% if config.repo_url %}
+      <div class="md-header__source">
+        {% include "partials/source.html" %}
+      </div>
+    {% endif %}
+  </nav>
+  {% if "navigation.tabs.sticky" in features %}
+    {% if "navigation.tabs" in features %}
+      {% include "partials/tabs.html" %}
+    {% endif %}
+  {% endif %}
+</header>

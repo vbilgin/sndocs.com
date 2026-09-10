@@ -3,6 +3,193 @@
 {% block styles %}
   {{ super() }}
   <link rel="stylesheet" href="{{ 'pagefind/pagefind-ui.css' | url }}">
+
+  {#-
+    Site identity for sndocs (issue #42): the five-colour palette
+    (Classic Crimson / Majorelle Blue / Pumpkin Spice / Carbon Black /
+    Parchment) layered over Material's `default` (light) and `slate` (dark)
+    schemes, the text wordmark, and the static "Release family" selector
+    (markup in overrides/partials/header.html). Inline here — not a
+    stylesheet under docs_dir — because docs_dir is the generated, gitignored
+    .sndocs/normalized/ tree. See docs/adr/0003-material-theme-customization.md.
+  -#}
+  <style>
+    /* --- raw palette (shared by both schemes) --------------------------- */
+    [data-md-color-scheme="default"],
+    [data-md-color-scheme="slate"] {
+      --sndocs-crimson: #d7263d;
+      --sndocs-blue: #6a4cff;
+      --sndocs-pumpkin: #ff8c42;
+      --sndocs-carbon: #262626;
+      --sndocs-parchment: #faf7f2;
+    }
+
+    /* --- light: Parchment ground / Crimson header --------------------- */
+    [data-md-color-scheme="default"] {
+      color-scheme: light;
+
+      --sndocs-ground: var(--sndocs-parchment);
+      --sndocs-surface: #ffffff;
+      --sndocs-text: var(--sndocs-carbon);
+      --sndocs-header: var(--sndocs-crimson);
+      --sndocs-primary: var(--sndocs-crimson);
+      --sndocs-accent: var(--sndocs-blue);
+      --sndocs-tertiary: var(--sndocs-pumpkin);
+      --sndocs-on-header: #ffffff;
+    }
+
+    /* --- dark: Carbon ground / Carbon header, brights lightened ------- */
+    [data-md-color-scheme="slate"] {
+      color-scheme: dark;
+
+      --sndocs-ground: var(--sndocs-carbon);
+      --sndocs-surface: #2f2f2f;
+      --sndocs-text: var(--sndocs-parchment);
+      --sndocs-header: var(--sndocs-carbon);
+      --sndocs-primary: #f2536a;   /* Crimson lightened  */
+      --sndocs-accent: #9b86ff;    /* Majorelle lightened */
+      --sndocs-tertiary: #ff9e5c;  /* Pumpkin lightened  */
+      --sndocs-on-header: var(--sndocs-parchment);
+    }
+
+    /* --- map the roles onto Material's custom properties ------------- */
+    [data-md-color-scheme="default"],
+    [data-md-color-scheme="slate"] {
+      --md-default-bg-color: var(--sndocs-ground);
+      --md-default-fg-color: var(--sndocs-text);
+      --md-typeset-color: var(--sndocs-text);
+
+      /* `--md-primary-fg-color` drives every primary affordance (active nav,
+         primary buttons, ...). In dark the header bar is pulled back to
+         Carbon by the explicit `.md-header` rule below. */
+      --md-primary-fg-color: var(--sndocs-primary);
+      --md-primary-bg-color: var(--sndocs-on-header);
+
+      --md-accent-fg-color: var(--sndocs-accent);
+      --md-typeset-a-color: var(--sndocs-accent);
+
+      --md-code-bg-color: var(--sndocs-surface);
+      --md-code-fg-color: var(--sndocs-text);
+    }
+
+    /* Header bar: Crimson in light (== primary), Carbon in dark. */
+    [data-md-color-scheme="default"] .md-header {
+      background-color: var(--sndocs-crimson);
+    }
+    [data-md-color-scheme="slate"] .md-header {
+      background-color: var(--sndocs-carbon);
+    }
+
+    /* Tertiary (Pumpkin) accents: text selection, admonition/detail rules. */
+    [data-md-color-scheme="default"] ::selection,
+    [data-md-color-scheme="slate"] ::selection {
+      background-color: var(--sndocs-tertiary);
+      color: var(--sndocs-carbon);
+    }
+    .md-typeset .admonition,
+    .md-typeset details {
+      border-left-color: var(--sndocs-tertiary);
+    }
+
+    /* --- text wordmark ---------------------------------------------- */
+    /* No image, no theme.icon.logo: hide Material's default logo glyph. The
+       lowercase "sndocs" wordmark is the site name in `.md-header__title`,
+       wrapped in `<a class="sndocs-wordmark">` (in the header partial) so it
+       still links home now that the logo `<a>` is hidden. */
+    .md-header__button.md-logo {
+      display: none;
+    }
+    .md-header__title {
+      font-weight: 700;
+      letter-spacing: -0.02em;         /* slight negative tracking */
+    }
+    .sndocs-wordmark {
+      color: inherit;
+      text-decoration: none;
+      flex-shrink: 0;                  /* never ellipsize the wordmark itself */
+    }
+
+    /* --- static "Release family" selector -------------------------- */
+    /* Sits in normal flow right after the wordmark span, inside the flex
+       `.md-header__topic` — no magic offset, and it inherits Material's own
+       fade/slide when the header title switches to the page heading on scroll. */
+    .sndocs-release {
+      position: relative;
+      align-self: center;
+      flex-shrink: 0;
+      margin-left: 0.7rem;
+      font-size: 0.55rem;
+      color: var(--md-primary-bg-color);
+      text-transform: none;
+      letter-spacing: normal;
+      font-weight: 400;
+    }
+    .sndocs-release__summary {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.15rem 0.4rem;
+      cursor: pointer;
+      list-style: none;
+      border: 1px solid var(--md-primary-bg-color--light);
+      border-radius: 0.1rem;
+      white-space: nowrap;
+      line-height: 1.2;
+    }
+    .sndocs-release__summary::-webkit-details-marker {
+      display: none;
+    }
+    .sndocs-release__caption {
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .sndocs-release__value {
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+    .sndocs-release__chevron {
+      width: 0.7rem;
+      height: 0.7rem;
+      fill: currentColor;
+      flex-shrink: 0;
+      transition: transform 0.2s;
+    }
+    .sndocs-release[open] .sndocs-release__chevron {
+      transform: rotate(180deg);
+    }
+    .sndocs-release__menu {
+      position: absolute;
+      top: calc(100% + 0.2rem);
+      left: 0;
+      min-width: 100%;
+      padding: 0.2rem;
+      background-color: var(--md-default-bg-color);
+      color: var(--md-default-fg-color);
+      border: 1px solid var(--md-default-fg-color--lightest);
+      border-radius: 0.1rem;
+      box-shadow: 0 0.2rem 0.5rem #0003;
+      z-index: 5;
+    }
+    .sndocs-release__item {
+      display: block;
+      padding: 0.3rem 0.5rem;
+      font-size: 0.7rem;
+      white-space: nowrap;
+    }
+    .sndocs-release__item--current {
+      font-weight: 700;
+      color: var(--sndocs-tertiary);
+    }
+    .sndocs-release__item--current::after {
+      content: " \2713";               /* check mark: current release */
+    }
+    /* Too cramped alongside the wordmark + repo link on a phone. */
+    @media screen and (max-width: 44.9375em) {
+      .sndocs-release {
+        display: none;
+      }
+    }
+  </style>
 {% endblock %}
 
 {% block header %}
