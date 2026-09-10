@@ -10,6 +10,7 @@ from sndocs.build import PagefindIndexingFailed, build_site
 from sndocs.fetch import fetch_repo
 from sndocs.minify import MinifyReport
 from sndocs.normalize import NormalizationFailed, normalize_corpus
+from sndocs.reporter import Reporter, Verbosity
 from sndocs.serve import DEFAULT_PORT, serve_site
 
 REPO_DIR = Path(".sndocs") / "repo"
@@ -19,6 +20,69 @@ MKDOCS_CONFIG = Path("mkdocs.yml")
 
 # Cap on per-file minify errors listed individually in the build output.
 MINIFY_FAILURES_SHOWN = 10
+
+class GlobalOptionGroup(click.Group):
+    """A `click.Group` that accepts the global `-v/-q/--color` options positioned
+    after the subcommand name, not just before it, by hoisting them to the front
+    of the argument list before Click's own parsing runs.
+
+    Click only parses group options *before* the subcommand name; this lets
+    `sndocs normalize -v` behave like `sndocs -v normalize` (issue #47: accepted
+    before and after the subcommand where practical). Which options count as
+    global is read straight off `self.params`, so a new flag on `cli()` needs no
+    matching edit here; `-V/--version` and `--help` are skipped as eager.
+    """
+
+    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        return super().parse_args(ctx, _hoist_global_options(self, args))
+
+
+def _hoist_global_options(group: click.Group, args: list[str]) -> list[str]:
+    """Move this group's own options (and any value they consume) to the front of
+    `args`, preserving the order of everything else. Everything from a bare `--`
+    onward is left untouched."""
+    valueless, valued = _global_option_names(group)
+    hoisted: list[str] = []
+    rest: list[str] = []
+    index = 0
+    while index < len(args):
+        token = args[index]
+        if token == "--":
+            rest.extend(args[index:])
+            break
+        if token in valueless or any(token.startswith(f"{opt}=") for opt in valued):
+            hoisted.append(token)
+        elif token in valued:
+            hoisted.append(token)
+            if index + 1 < len(args):
+                index += 1
+                hoisted.append(args[index])
+        elif _is_short_bundle_of(token, valueless):
+            hoisted.append(token)  # -vv, -vq, ... — every char is a global flag
+        else:
+            rest.append(token)
+        index += 1
+    return hoisted + rest
+
+
+def _global_option_names(group: click.Group) -> tuple[frozenset[str], frozenset[str]]:
+    """The opt strings of `group`'s non-eager options, split into those that take
+    no value (`-v`, `-q`) and those that do (`--color`)."""
+    valueless: set[str] = set()
+    valued: set[str] = set()
+    for param in group.params:
+        if not isinstance(param, click.Option) or param.is_eager:
+            continue
+        (valueless if param.is_flag or param.count else valued).update(param.opts)
+    return frozenset(valueless), frozenset(valued)
+
+
+def _is_short_bundle_of(token: str, valueless: frozenset[str]) -> bool:
+    """True for a single-dash run like `-vv` or `-vq` whose every character is one
+    of the group's valueless short options."""
+    if len(token) < 2 or not token.startswith("-") or token.startswith("--"):
+        return False
+    return all(f"-{char}" in valueless for char in token[1:])
 
 
 def minify_options(func: Callable[..., None]) -> Callable[..., None]:
@@ -39,10 +103,37 @@ def minify_options(func: Callable[..., None]) -> Callable[..., None]:
     return func
 
 
-@click.group()
+@click.group(cls=GlobalOptionGroup)
 @click.version_option(__version__, "-V", "--version", prog_name="sndocs")
-def cli() -> None:
+@click.option(
+    "-v",
+    "--verbose",
+    count=True,
+    help="More detail: -v for per-item lines and subprocess output, -vv to add a "
+    "formatted traceback on failure. Repeatable.",
+)
+@click.option(
+    "-q",
+    "--quiet",
+    is_flag=True,
+    help="Errors only: silence progress bars, spinners, summaries, and warnings. "
+    "A failing run still exits non-zero.",
+)
+@click.option(
+    "--color",
+    type=click.Choice(["auto", "always", "never"]),
+    default="auto",
+    show_default=True,
+    help="Colour output. 'auto' honours NO_COLOR and a non-terminal stderr; "
+    "'always' keeps colour on even under NO_COLOR; 'never' forces it off. A "
+    "non-terminal stderr still drops the animated bar regardless.",
+)
+@click.pass_context
+def cli(ctx: click.Context, verbose: int, quiet: bool, color: str) -> None:
     """Fetch, normalize, and build a local ServiceNowDocs site."""
+    if verbose and quiet:
+        raise click.UsageError("-v/--verbose and -q/--quiet cannot be used together.")
+    ctx.obj = Reporter.for_cli(Verbosity.from_flags(verbose, quiet), color=color)
 
 
 @cli.command()

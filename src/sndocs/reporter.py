@@ -9,11 +9,15 @@ optional second `rich.Console` for the retained one-line command summaries
 (stdout), and a resolved `Verbosity`.
 
 **This module is the only importer of `rich` in the codebase** — see ADR 0004;
-`tests/test_reporter.py::test_only_reporter_imports_rich` enforces it.
+`tests/test_reporter.py::test_only_reporter_imports_rich` enforces it. The
+`cli()` group builds its one `Reporter` through `Reporter.for_cli(...)` (#47) so
+that `rich.Console` construction — and the `--color` / `NO_COLOR` policy that
+feeds it — stays inside this module too.
 
-At the ticket that introduced this module (#46) no command wires it in yet
-(`test_cli_does_not_import_reporter_yet`); the per-command adoption lands in the
-follow-up tickets under #45.
+At the ticket that introduced this module (#46) no command rendered through it
+yet; #47 wires the global `-v/-q/--color` flags and puts one `Reporter` on the
+Click context, and the per-command adoption lands in the follow-up tickets under
+#45.
 """
 
 from __future__ import annotations
@@ -61,15 +65,29 @@ class Verbosity(IntEnum):
     * ``verbose`` — per-item log lines instead of a bar; subprocess output shown.
     * ``debug`` — as ``verbose`` plus a formatted traceback on failure.
 
-    Mapping the raw ``-v`` count and ``-q`` flag onto this enum belongs with the
-    global CLI flags themselves — the next ticket under #45 (see ADR 0004
-    follow-ups).
+    ``from_flags`` maps the raw ``-v`` count and ``-q`` flag from the `cli()`
+    group onto this enum (#47). The mutually-exclusive ``-v`` + ``-q`` case is a
+    `click.UsageError` raised in the group before this is reached, so here
+    ``quiet`` simply wins if both somehow arrive.
     """
 
     quiet = 0
     normal = 1
     verbose = 2
     debug = 3
+
+    @classmethod
+    def from_flags(cls, verbose: int, quiet: bool) -> Verbosity:
+        """Resolve the ``-v`` repeat count and the ``-q`` flag to a level: ``-q``
+        → ``quiet``; ``-v`` → ``verbose``; ``-vv`` or more → ``debug``; nothing →
+        ``normal``."""
+        if quiet:
+            return cls.quiet
+        if verbose >= 2:
+            return cls.debug
+        if verbose == 1:
+            return cls.verbose
+        return cls.normal
 
 
 class Reporter:
@@ -94,6 +112,27 @@ class Reporter:
         self.out_console = out_console if out_console is not None else console
         self.plain_progress_interval = plain_progress_interval
         self._warnings: list[str] = []
+
+    @classmethod
+    def for_cli(cls, verbosity: Verbosity, *, color: str = "auto") -> Reporter:
+        """Build the one `Reporter` the `cli()` group puts on the Click context
+        (#47): diagnostics and progress on **stderr**, retained summary lines on
+        **stdout**, both honouring the resolved `--color` policy.
+
+        `color` is the raw ``auto`` / ``always`` / ``never`` choice. ``never``
+        forces colour off; ``always`` keeps colour on even when ``NO_COLOR`` is
+        set (it does *not* force colour onto a non-terminal — `rich` still
+        suppresses ANSI there); ``auto`` defers to `rich`, which turns colour off
+        for a non-terminal or when ``NO_COLOR`` is present. Either way a
+        non-terminal stderr takes the plain, non-animated path — decided by
+        `uses_progress_bar` from `console.is_terminal`, which this never forces.
+        """
+        no_color = _resolve_no_color(color)
+        return cls(
+            Console(stderr=True, no_color=no_color),
+            verbosity,
+            out_console=Console(no_color=no_color),
+        )
 
     # -- capability queries the commands branch on --------------------------
 
@@ -306,3 +345,15 @@ class Reporter:
 
 def _noop_tick(item: str | None = None) -> None:
     """The `Tick` handed out at ``quiet`` verbosity — advances nothing."""
+
+
+def _resolve_no_color(color: str) -> bool | None:
+    """Turn the ``--color`` choice into a `rich.Console` ``no_color`` argument.
+    ``never`` → ``True`` (off); ``always`` → ``False`` (colour stays on,
+    overriding the ``NO_COLOR`` env var); ``auto`` → ``None``, letting `rich`
+    apply its own ``NO_COLOR`` / non-terminal detection."""
+    if color == "never":
+        return True
+    if color == "always":
+        return False
+    return None
