@@ -1,5 +1,21 @@
-site_name: ServiceNowDocs (Australia)
+site_name: sndocs
+site_description: >-
+  An independent, unendorsed static mirror of the ServiceNow product
+  documentation for the Australia release family, built from the public
+  ServiceNow/ServiceNowDocs Markdown corpus.
 site_url: https://sndocs.com/
+# Points Material's built-in repo link (and client-side star count) at the
+# sndocs source. `edit_uri: ""` suppresses the per-page "edit" pencil: pages
+# are generated from the normalized corpus, not editable in this repo.
+repo_url: https://github.com/vbilgin/sndocs.com
+repo_name: sndocs.com
+edit_uri: ""
+# Plain-text fallback only. The real, linked attribution is rendered on every
+# page by overrides/partials/copyright.html (Material's footer copyright
+# partial); this string is what shows if that partial is ever bypassed.
+copyright: >-
+  Documentation content (c) ServiceNow, Inc., licensed under Apache 2.0. sndocs
+  is an independent project, not affiliated with or endorsed by ServiceNow, Inc.
 docs_dir: .sndocs/normalized
 site_dir: .sndocs/site
 exclude_docs: |
@@ -38,6 +54,23 @@ theme:
   name: material
   font: false
   custom_dir: overrides
+  # Paired light/dark schemes. `media: (prefers-color-scheme: ...)` makes the OS
+  # setting the default on first visit; each entry's `toggle` renders the manual
+  # switch in the header that overrides (and persists) that choice. The actual
+  # five-colour palette (Classic Crimson / Majorelle Blue / Pumpkin Spice /
+  # Carbon Black / Parchment) is applied over these schemes by the inline
+  # <style> block in overrides/main.html — see docs/adr/0003.
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-night
+        name: Switch to light mode
   features:
     # Load-bearing, not cosmetic. `nav:` is computed from the whole ~50k-page
     # `australia` corpus (see src/sndocs/build.py); without `navigation.prune`
