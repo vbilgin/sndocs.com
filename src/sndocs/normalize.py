@@ -19,14 +19,12 @@ from __future__ import annotations
 import datetime as dt
 import html
 import json
-import multiprocessing
 import os
 import platform
 import re
 import shutil
 import time
 from collections import Counter
-from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any, Callable
 
@@ -35,6 +33,7 @@ import yaml
 from markdown_it import MarkdownIt
 
 from sndocs.link_rewrite import rewrite_links
+from sndocs.parallel import parallel_map
 
 MARKDOWN_SUFFIXES = {".md", ".markdown"}
 TABLE_RE = re.compile(r"<table(?P<attrs>[^>]*)>(?P<body>.*?)</table>", re.IGNORECASE | re.DOTALL)
@@ -54,6 +53,54 @@ DELIMITER_CELL_RE = re.compile(r"^:?-+:?$")
 
 REPORT_FILENAME = "normalization-report.json"
 MANIFEST_FILENAME = "normalization-manifest.json"
+
+# Counters that are not repairs: skipped work, or a residue left untouched. The
+# CLI turns these into per-file warnings; they never appear in the repair summary.
+_NON_REPAIR_COUNTERS = frozenset({"render_changing_cleanup_rejected", "raw_tables_remaining"})
+
+# Human phrasing for the `transformations` counter, for the post-run summary the
+# CLI prints. Deliberately worded as mechanical, render-preserving cleanups —
+# never "edited" — per CONTEXT.md ("normalized Markdown") and ADR 0001. Order here
+# is the order shown. Counters in `_NON_REPAIR_COUNTERS` are not repairs and are
+# surfaced as warnings instead, not listed here. Any counter key missing from this
+# map still shows, humanized from its name, so a new counter is never silently
+# dropped.
+REPAIR_LABELS: dict[str, str] = {
+    "byte_order_marks_removed": "byte-order marks removed",
+    "leading_blank_lines_removed": "leading blank lines removed",
+    "front_matter_canonicalized": "front matter re-serialized to canonical YAML",
+    "front_matter_fallbacks": "front matter recovered with the tolerant parser",
+    "redundant_escapes_removed": "redundant backslash escapes removed",
+    "trailing_space_lines_cleaned": "lines with trailing spaces cleaned",
+    "excess_blank_lines_removed": "runs of blank lines collapsed",
+    "files_with_render_equivalent_cleanup": "files given render-equivalent cosmetic cleanup",
+    "table_pipe_boundaries_repaired": "table/pipe-row boundaries separated",
+    "table_fence_boundaries_repaired": "table/code-fence boundaries separated",
+    "table_fence_newline_boundaries_repaired": "table/code-fence line breaks repaired",
+    "pipe_table_caption_rows_split": "pipe-table caption rows split from their header",
+    "raw_tables_converted": "rectangular HTML tables converted to pipe tables",
+    "presentational_table_classes_dropped": "presentational table classes dropped",
+    "raw_github_links_rewritten": "raw-GitHub corpus links rewritten as relative",
+    "unclosed_fences_closed_at_eof": "unclosed code fences closed at end of file",
+}
+
+
+def repair_summary_lines(transformations: dict[str, int]) -> list[str]:
+    """One `"<label>: <count>"` line per non-zero repair counter, in
+    `REPAIR_LABELS` order (unknown keys, humanized, appended after). Returns
+    ``[]`` when nothing was repaired."""
+    lines: list[str] = []
+    seen: set[str] = set()
+    for key, label in REPAIR_LABELS.items():
+        count = transformations.get(key, 0)
+        if count:
+            lines.append(f"{label}: {count:,}")
+        seen.add(key)
+    for key, count in transformations.items():
+        if key not in seen and key not in _NON_REPAIR_COUNTERS and count:
+            lines.append(f"{key.replace('_', ' ')}: {count:,}")
+    return lines
+
 
 _source_root: Path
 _output_root: Path
@@ -545,6 +592,7 @@ def _normalize_one(
 ) -> dict[str, Any]:
     source_path = source_root / relative
     output_path = output_root / relative
+    started = time.perf_counter()
     try:
         original = source_path.read_text(encoding="utf-8")
         normalized, stats, errors = normalize_text(original, md, relative.as_posix(), known_paths)
@@ -557,6 +605,7 @@ def _normalize_one(
             "output_bytes": len(normalized.encode("utf-8")),
             "stats": dict(stats),
             "errors": errors,
+            "seconds": time.perf_counter() - started,
         }
     except Exception as exc:
         return {
@@ -566,6 +615,7 @@ def _normalize_one(
             "output_bytes": 0,
             "stats": {},
             "errors": [f"{type(exc).__name__}: {exc}"],
+            "seconds": time.perf_counter() - started,
         }
 
 
@@ -581,11 +631,24 @@ def _normalize_one_worker(relative_text: str) -> dict[str, Any]:
     return _normalize_one(Path(relative_text), _source_root, _output_root, _parser, _known_paths)
 
 
-def normalize_corpus(source: Path, output: Path, workers: int | None = None) -> dict[str, Any]:
+def normalize_corpus(
+    source: Path,
+    output: Path,
+    workers: int | None = None,
+    *,
+    on_progress: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
     """Normalize every Markdown file under `source` into `output`, mirroring the
     source's relative directory structure. Always writes a report and a manifest
     into `output`. Raises `NormalizationFailed` if any file failed its invariants;
-    raises `FileNotFoundError` if `source` does not exist."""
+    raises `FileNotFoundError` if `source` does not exist.
+
+    `on_progress`, if given, is called once with each per-file result dict as that
+    file finishes — in completion order under a process pool, in discovery order
+    when run serially. It carries a `seconds` key (that file's wall time) that is
+    stripped before the result is written to `normalization-manifest.json`, so the
+    persisted manifest is unchanged. The CLI uses this to drive its progress bar
+    and collect non-fatal per-file warnings."""
     source = source.resolve()
     output = output.resolve()
     if not source.is_dir():
@@ -603,18 +666,29 @@ def normalize_corpus(source: Path, output: Path, workers: int | None = None) -> 
     known_paths = frozenset(p.as_posix() for p in paths)
     discovery_seconds = time.perf_counter() - discovery_started
 
+    def tick(file_result: dict[str, Any]) -> None:
+        if on_progress is not None:
+            on_progress(file_result)
+
     started = time.perf_counter()
     if workers == 1 or len(paths) <= 1:
+        # Serial fallback: same per-file tick as the pool, one call as each file
+        # is written, sharing a single parser instance.
         md = parser()
-        results = [_normalize_one(p, source, output, md, known_paths) for p in paths]
+        results: list[dict[str, Any]] = []
+        for relative in paths:
+            result = _normalize_one(relative, source, output, md, known_paths)
+            results.append(result)
+            tick(result)
     else:
-        with ProcessPoolExecutor(
-            max_workers=workers,
-            mp_context=multiprocessing.get_context("fork"),
+        results = parallel_map(
+            _normalize_one_worker,
+            [p.as_posix() for p in paths],
+            workers=workers,
+            on_result=tick,
             initializer=_init_worker,
             initargs=(str(source), str(output), sorted(known_paths)),
-        ) as executor:
-            results = list(executor.map(_normalize_one_worker, (p.as_posix() for p in paths), chunksize=16))
+        )
     elapsed = time.perf_counter() - started
 
     aggregate: Counter[str] = Counter()
@@ -648,7 +722,8 @@ def normalize_corpus(source: Path, output: Path, workers: int | None = None) -> 
         },
     }
     (output / REPORT_FILENAME).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    manifest = {"source": str(source), "output": str(output), "files": results}
+    manifest_files = [{key: value for key, value in r.items() if key != "seconds"} for r in results]
+    manifest = {"source": str(source), "output": str(output), "files": manifest_files}
     (output / MANIFEST_FILENAME).write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
     if failures:
