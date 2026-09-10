@@ -300,11 +300,27 @@ def test_only_reporter_imports_rich() -> None:
     assert offenders == []
 
 
-def test_cli_does_not_import_reporter_yet() -> None:
-    imports_reporter = re.search(
-        r"^\s*(from sndocs\.reporter\b|from \.reporter\b|import sndocs\.reporter\b"
-        r"|from sndocs import [^\n]*\breporter\b)",
-        (SRC / "cli.py").read_text(),
-        re.MULTILINE,
-    )
-    assert imports_reporter is None
+def test_verbosity_from_flags_maps_the_raw_counts() -> None:
+    assert Verbosity.from_flags(0, False) is Verbosity.normal
+    assert Verbosity.from_flags(1, False) is Verbosity.verbose
+    assert Verbosity.from_flags(2, False) is Verbosity.debug
+    assert Verbosity.from_flags(5, False) is Verbosity.debug
+    assert Verbosity.from_flags(0, True) is Verbosity.quiet
+    # -v + -q is a UsageError in the CLI; if it ever reaches here, quiet wins.
+    assert Verbosity.from_flags(3, True) is Verbosity.quiet
+
+
+def test_for_cli_splits_diagnostics_to_stderr_and_summaries_to_stdout() -> None:
+    reporter = Reporter.for_cli(Verbosity.verbose)
+
+    assert reporter.verbosity is Verbosity.verbose
+    assert reporter.console.stderr is True
+    assert reporter.out_console.stderr is False
+    assert reporter.console is not reporter.out_console
+
+
+def test_for_cli_colour_policy_feeds_no_color_both_ways() -> None:
+    assert Reporter.for_cli(Verbosity.normal, color="never").console.no_color is True
+    # `always` overrides a NO_COLOR in the environment (rich only reads the env
+    # when no_color is left as None).
+    assert Reporter.for_cli(Verbosity.normal, color="always").console.no_color is False
