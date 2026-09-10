@@ -364,6 +364,193 @@ def test_build_minify_preserves_inline_svg_and_entity_prefixed_query_params(
         assert "§" not in url and "¶" not in url
 
 
+# -- Seam 1: build + minify through the Reporter (issue #49) ------------------
+
+
+def test_build_announces_each_phase_and_the_minify_bar(fixture_corpus: Path, tmp_path: Path) -> None:
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        _seed_normalized(fixture_corpus)
+
+        result = runner.invoke(cli, ["build", "--minify"])
+        assert result.exit_code == 0, result.output
+
+        # The opaque phases are announced (plain spinner lines off a terminal)...
+        for phase in ("nav walk", "MkDocs render", "Pagefind index"):
+            assert f"{phase}..." in result.output, phase
+        # ...and the minify pass — the one phase with countable work — shows a
+        # determinate progress line instead, with count, percentage and elapsed.
+        assert re.search(r"minify: \d+/\d+ \(\d+%\) \d+:\d{2}:\d{2}", result.output)
+
+
+def test_build_no_minify_skips_the_minify_phase(fixture_corpus: Path, tmp_path: Path) -> None:
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        _seed_normalized(fixture_corpus)
+
+        result = runner.invoke(cli, ["build", "--no-minify"])
+        assert result.exit_code == 0, result.output
+
+        assert "MkDocs render..." in result.output
+        assert "minify..." not in result.output
+        assert not re.search(r"minify: \d+/\d+", result.output)
+
+
+def test_build_hides_mkdocs_and_pagefind_chatter_at_normal_verbosity(
+    fixture_corpus: Path, tmp_path: Path
+) -> None:
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        _seed_normalized(fixture_corpus)
+
+        result = runner.invoke(cli, ["build"])
+        assert result.exit_code == 0, result.output
+
+        # MkDocs' own INFO logging and Pagefind's stdout summary stay out of a
+        # normal run.
+        assert "Building documentation to directory" not in result.output
+        assert "mkdocs:" not in result.output
+        assert "Running Pagefind v" not in result.output
+        assert "[Building search indexes]" not in result.output
+
+
+def test_build_still_surfaces_mkdocs_warnings_at_normal_verbosity(
+    fixture_corpus: Path, tmp_path: Path
+) -> None:
+    """Hiding MkDocs' INFO chatter at normal verbosity must not also swallow a
+    real diagnostic: a broken internal link still reaches the user, grouped."""
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        _seed_normalized(fixture_corpus)
+        _write_normalized_page(
+            "markdown/category-one/broken-link.md",
+            "Broken Link Page",
+            "See [the missing page](./does-not-exist.md).",
+        )
+
+        result = runner.invoke(cli, ["build", "--no-minify"])
+        assert result.exit_code == 0, result.output
+
+        assert "WARNING:" in result.output
+        assert "does-not-exist.md" in result.output
+        # Still no INFO-level chatter.
+        assert "Building documentation to directory" not in result.output
+
+
+def test_build_quiet_suppresses_even_mkdocs_warnings(fixture_corpus: Path, tmp_path: Path) -> None:
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        _seed_normalized(fixture_corpus)
+        _write_normalized_page(
+            "markdown/category-one/broken-link.md",
+            "Broken Link Page",
+            "See [the missing page](./does-not-exist.md).",
+        )
+
+        result = runner.invoke(cli, ["build", "--no-minify", "-q"])
+
+        assert result.exit_code == 0, result.output
+        assert result.output == ""
+
+
+def test_build_surfaces_mkdocs_and_pagefind_output_at_verbose(fixture_corpus: Path, tmp_path: Path) -> None:
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        _seed_normalized(fixture_corpus)
+
+        result = runner.invoke(cli, ["build", "-v"])
+        assert result.exit_code == 0, result.output
+
+        # -v routes both through the Reporter.
+        assert "mkdocs: Building documentation to directory" in result.output
+        assert "Running Pagefind v" in result.output
+
+
+def test_build_quiet_suppresses_the_spinners_bar_and_summary(fixture_corpus: Path, tmp_path: Path) -> None:
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        _seed_normalized(fixture_corpus)
+
+        result = runner.invoke(cli, ["build", "-q"])
+
+        assert result.exit_code == 0, result.output
+        assert result.output == ""
+        # The work still happened.
+        assert (SITE / "pagefind" / "pagefind.js").is_file()
+
+
+def test_build_summary_lines_are_unchanged_and_on_stdout(fixture_corpus: Path, tmp_path: Path) -> None:
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        _seed_normalized(fixture_corpus)
+
+        result = runner.invoke(cli, ["build", "--minify"])
+        assert result.exit_code == 0, result.output
+
+        assert "build: rendered .sndocs/normalized into .sndocs/site, indexed with Pagefind" in result.output
+        assert re.search(r"build: minified \d+/\d+ HTML files, \d+ bytes smaller", result.output)
+        # Retained summaries go to stdout; the spinners/bar go to stderr.
+        assert "build: rendered" not in result.stderr
+        assert "build: minified" not in result.stderr
+        assert "nav walk..." in result.stderr
+
+
+def test_build_pagefind_failure_renders_a_styled_error_not_a_traceback(
+    fixture_corpus: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sndocs.build as build_module
+
+    def _fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(args, returncode=1, stdout="", stderr="boom: no such wasm target")
+
+    monkeypatch.setattr(build_module.subprocess, "run", _fake_run)
+
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        _seed_normalized(fixture_corpus)
+
+        result = runner.invoke(cli, ["build"])
+
+        assert result.exit_code != 0
+        assert "ERROR: Build failed" in result.output
+        assert "boom: no such wasm target" in result.output
+        assert "Traceback" not in result.output
+
+
+def test_build_pagefind_failure_adds_the_traceback_at_double_verbose(
+    fixture_corpus: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sndocs.build as build_module
+
+    def _fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(args, returncode=1, stdout="", stderr="boom")
+
+    monkeypatch.setattr(build_module.subprocess, "run", _fake_run)
+
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        _seed_normalized(fixture_corpus)
+
+        result = runner.invoke(cli, ["build", "-vv"])
+
+        assert result.exit_code != 0
+        assert "boom" in result.output
+        assert "Traceback" in result.output
+
+
+def test_build_missing_normalized_dir_renders_through_reporter_error(tmp_path: Path) -> None:
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        shutil.copy(MKDOCS_CONFIG, "mkdocs.yml")
+
+        result = runner.invoke(cli, ["build"])
+
+        assert result.exit_code != 0
+        assert "ERROR: Build failed" in result.output
+        assert ".sndocs/normalized does not exist" in result.output
+        assert not SITE.exists()
+
+
 def test_build_minify_skips_a_poison_html_file_without_failing(fixture_corpus: Path, tmp_path: Path) -> None:
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):

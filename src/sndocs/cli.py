@@ -1,12 +1,13 @@
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import click
 
 from sndocs import __version__
-from sndocs.build import PagefindIndexingFailed, build_site
+from sndocs.build import BuildObserver, PagefindIndexingFailed, build_site
 from sndocs.fetch import fetch_repo
 from sndocs.minify import MinifyReport
 from sndocs.normalize import (
@@ -224,39 +225,80 @@ def _normalize_file_warnings(file_result: dict[str, object]) -> list[str]:
     return notes
 
 
+class _ReporterBuildObserver(BuildObserver):
+    """Routes `build_site`'s phase / minify / tool-output hooks through the shared
+    `Reporter`: an elapsed-timer spinner per phase, the determinate minify bar,
+    and MkDocs / Pagefind output only from `-v` up."""
+
+    def __init__(self, reporter: Reporter) -> None:
+        self._reporter = reporter
+
+    @property
+    def surfaces_tool_output(self) -> bool:
+        return self._reporter.shows_subprocess_output
+
+    @contextmanager
+    def phase(self, label: str) -> Iterator[None]:
+        with self._reporter.spinner(label):
+            yield
+
+    @contextmanager
+    def minify_progress(self, total: int) -> Iterator[Callable[..., None]]:
+        with self._reporter.progress("minify", total=total) as tick:
+            yield tick
+
+    def tool_line(self, line: str) -> None:
+        self._reporter.log(line)
+
+    def tool_warning(self, line: str) -> None:
+        self._reporter.warn(line)
+
+
 @cli.command()
 @minify_options
-def build(minify: bool, minify_workers: int | None) -> None:
+@click.pass_context
+def build(ctx: click.Context, minify: bool, minify_workers: int | None) -> None:
     """Build the MkDocs site from .sndocs/normalized/ into .sndocs/site/."""
+    reporter: Reporter = ctx.obj
     if minify_workers is not None and not minify:
         raise click.UsageError("--minify-workers has no effect without --minify.")
     if not NORMALIZED_DIR.is_dir():
-        raise click.ClickException(
-            f"{NORMALIZED_DIR} does not exist. Run `sndocs normalize` first, or populate it manually."
+        reporter.error(
+            "Build failed",
+            f"{NORMALIZED_DIR} does not exist. Run `sndocs normalize` first, or populate it manually.",
         )
+        raise SystemExit(1)
     try:
         report = build_site(
-            NORMALIZED_DIR, SITE_DIR, MKDOCS_CONFIG, minify=minify, minify_workers=minify_workers
+            NORMALIZED_DIR,
+            SITE_DIR,
+            MKDOCS_CONFIG,
+            minify=minify,
+            minify_workers=minify_workers,
+            observer=_ReporterBuildObserver(reporter),
         )
     except PagefindIndexingFailed as exc:
-        raise click.ClickException(f"Pagefind indexing failed: {exc}") from exc
-    click.echo(f"build: rendered {NORMALIZED_DIR} into {SITE_DIR}, indexed with Pagefind")
-    _report_minify(report)
+        reporter.error("Build failed", f"Pagefind indexing failed: {exc}")
+        reporter.print_exception(exc)
+        raise SystemExit(1) from exc
+    reporter.flush_warnings("MkDocs warnings")
+    reporter.summary(f"build: rendered {NORMALIZED_DIR} into {SITE_DIR}, indexed with Pagefind")
+    _report_minify(reporter, report)
 
 
-def _report_minify(report: MinifyReport | None) -> None:
+def _report_minify(reporter: Reporter, report: MinifyReport | None) -> None:
     if report is None:
         return
-    click.echo(
+    reporter.summary(
         f"build: minified {report.minified_files}/{report.total_files} HTML files, "
         f"{report.bytes_saved} bytes smaller"
     )
     if report.failed_files:
-        click.echo(f"build: {report.failed_files} file(s) could not be minified, left unchanged:")
+        reporter.summary(f"build: {report.failed_files} file(s) could not be minified, left unchanged:")
         for path, error in report.failures[:MINIFY_FAILURES_SHOWN]:
-            click.echo(f"  {path}: {error}")
+            reporter.summary(f"  {path}: {error}")
         if report.failed_files > MINIFY_FAILURES_SHOWN:
-            click.echo(f"  ... and {report.failed_files - MINIFY_FAILURES_SHOWN} more")
+            reporter.summary(f"  ... and {report.failed_files - MINIFY_FAILURES_SHOWN} more")
 
 
 @cli.command()
