@@ -23,6 +23,11 @@ dependencies = [
     # rendered site's HTML smaller. The `sndocs.minify` module owns the one
     # conservative option set; `sndocs.minify_check` (#33) imports it from there.
     "minify-html>=0.16",
+    # The shared CLI output layer (issue #46, parent #45): progress bars,
+    # spinners, non-terminal/NO_COLOR detection, styled diagnostics, and
+    # formatted tracebacks in one library. Only `sndocs.reporter` imports it —
+    # see ADR 0004.
+    "rich>=13",
 ]
 
 [project.optional-dependencies]
