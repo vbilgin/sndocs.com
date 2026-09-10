@@ -213,12 +213,49 @@ Deliberately **not** enabled:
 | Finding | Issue | Gates #5? | Disposition |
 | --- | --- | --- | --- |
 | 2 — redundant escapes inside raw HTML tables | #26 | no | post-v1 rendering-quality; normalizer change, relax the `in_table` guard for `\(` `\)` `\_` only, plus a full-corpus idempotence re-validation pass |
-| 3 — residual malformed table/fence boundaries | #27 | no | post-v1 rendering-quality; widen `repair_table_boundaries()` for newline-then-fence (3b) and add a conservative ragged-pipe-table repair (3a) |
+| 3 — residual malformed table/fence boundaries | #27 | no | **resolved** — `repair_table_boundaries()` widened for newline-then-fence (3b) and for the single-column-caption pipe-table shape (3a); full-corpus engine re-scan is clean (0 findings). See "Follow-up: finding 3" below. Full-corpus `sndocs normalize` idempotence-to-disk pass still to run. |
 | 4 — full-corpus `mkdocs build` does not complete (O(n²) nav) | #25 | **yes** (blocking) | **resolved** — `navigation.prune` (see "Follow-up: finding 4" below); render ~9 min, ~11 min end-to-end with Pagefind |
 | 5 — 33 normalizer idempotence failures on the full corpus | #24 | **yes** (blocking) | pre-existing normalizer bug (issue #8 area), scoped to `api-reference/cllent-mobile-api-reference/` and `api-reference/server-api-reference/` |
 
 Findings 2 and 3 are not sub-issues of #5 — they are standalone quality
 follow-ups. Findings 4 and 5 are blocking sub-issues of #5.
+
+## Follow-up: finding 3 — residual malformed table/fence boundaries (issue #27)
+
+Date: 2026-09-09
+
+Two conservative repairs added to `repair_table_boundaries()` in
+`src/sndocs/normalize.py`, both idempotent and covered by the normalizer's
+existing "no broken table boundary remains" invariant:
+
+* **3b — newline-then-fence.** A ```` ``` ```` / `~~~` fence on the line
+  *directly after* a `</table>` (previously only the same-line case was
+  repaired) now gets a blank line inserted, so Python-Markdown renders it as a
+  code block instead of leaking the fence markers into a `<p>`. The fence's own
+  ≤3-space indent is preserved; a 4-space indented block after `</table>` is
+  left alone (it is genuinely indented code, not a fence).
+* **3a — single-column caption row.** A lone non-delimiter `| caption |` row
+  sitting at a block boundary immediately above a multi-column
+  `header + delimiter` pair (column counts matching) gets a blank line inserted
+  between it and the header, so Python-Markdown's `tables` extension renders the
+  table below (markdown-it-py already treats them as two blocks). The caption
+  itself is left as prose — beautifying it would be guessing. **Other ragged
+  shapes are deliberately not touched:** a header/delimiter column-count
+  mismatch renders as prose under *both* engines, so there is no non-guessing
+  repair and the normalizer leaves it exactly as-is. Body-row column
+  raggedness already renders fine under Python-Markdown and needs no repair.
+
+Unit coverage: `tests/test_normalize_table_repair.py`.
+
+**Re-scan: clean.** `python -m sndocs.engine_check` over the full `australia`
+corpus (50,112 files, source bodies re-normalized in-process with this change)
+reports **0 findings** — down from the ~9 fence-in-`<p>` and ~18
+`table-not-rendered` residuals finding 3 recorded. The genuinely-ragged
+non-caption shapes the repair deliberately skips did not leave a residual leak.
+
+**Still outstanding** (needs the full corpus, run manually): a full-corpus
+`sndocs normalize` idempotence pass to disk — exit 0 and byte-identical second
+run (depends on #24, or run against the currently-passing subset).
 
 ## Follow-up: finding 4 resolved — `navigation.prune` (issue #25)
 
