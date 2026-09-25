@@ -43,6 +43,28 @@ Or run the steps individually:
 `sndocs --version` reports the installed version. `sndocs COMMAND --help` shows
 per-command options (`--workers`, `--minify/--no-minify`, `--port`, …).
 
+### Progress and output
+
+Long steps report as they go: a progress bar with counts, percentage, elapsed
+time and ETA for `normalize` and the `build` minify pass, an elapsed-time
+spinner for `fetch` and `build`'s other phases, and per-step labels plus a
+timing breakdown for `all`. `normalize` prints a summary of what it
+auto-repaired once its bar finishes.
+
+Global flags, accepted before or after the subcommand:
+
+| Flag | What it does |
+| ---- | ------------ |
+| `-v/--verbose` | Per-item log lines instead of a live bar, plus the underlying `git`, MkDocs, and Pagefind output. Repeat (`-vv`) for debug detail and a formatted traceback on failure. |
+| `-q/--quiet` | Errors only — no bars, spinners, summaries, or warnings. A failing run still exits non-zero. |
+| `--color=auto\|always\|never` | Colour output; `auto` (the default) honours `NO_COLOR` and a non-terminal stderr. |
+
+`-v` and `-q` together is a usage error. Progress, warnings, and diagnostics go
+to stderr; the per-command summary lines go to stdout, so redirecting stdout
+captures the summary without the animation. When stderr is not a terminal (CI,
+pipes), the animated bar is replaced by periodic plain progress lines and
+warnings/errors are prefixed `WARNING:` / `ERROR:`.
+
 Everything generated lives under the project-local, gitignored `.sndocs/`
 directory: `repo/` (cloned source), `normalized/` (normalized Markdown), and
 `site/` (built site). Only `fetch` needs network access.
