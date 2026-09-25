@@ -6,7 +6,15 @@ from contextlib import contextmanager
 from pathlib import Path
 
 REMOTE_URL = "https://github.com/ServiceNow/ServiceNowDocs.git"
-BRANCH = "australia"
+
+#: The closed set of upstream branches that are release families, as opposed to
+#: non-family branches (`store`, `mobile`, `main`, ...) that must never be
+#: fetched as a documentation corpus.
+RELEASE_FAMILIES = ("xanadu", "yokohama", "zurich", "australia", "brazil")
+
+#: Fixed default release family — not upstream's own default branch, so a user
+#: who specifies nothing never silently gets an Early Availability corpus.
+DEFAULT_RELEASE = "australia"
 
 
 class FetchObserver:
@@ -41,7 +49,7 @@ class FetchObserver:
 def fetch_repo(
     dest: Path,
     remote_url: str | None = None,
-    branch: str = BRANCH,
+    branch: str = DEFAULT_RELEASE,
     *,
     observer: FetchObserver | None = None,
 ) -> None:

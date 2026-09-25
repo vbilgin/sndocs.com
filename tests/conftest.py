@@ -32,8 +32,10 @@ def run_git(args: list[str], cwd: Path) -> None:
 @pytest.fixture
 def make_fixture_git_remote(tmp_path: Path):
     """Factory fixture: builds a local git repo standing in for ServiceNowDocs, with an
-    `australia` branch (seeded from the fixture corpus) and a `store` branch (release-notes
-    content that must never be fetched). Returns the repo path, usable as a `git clone` source."""
+    `australia` branch (seeded from the fixture corpus), a `brazil` branch (a second
+    release family, standing in for Brazil, with distinct marker content) and a `store`
+    branch (release-notes content that must never be fetched). Returns the repo path,
+    usable as a `git clone` source."""
 
     def _make(name: str = "remote") -> Path:
         remote = tmp_path / name
@@ -46,6 +48,12 @@ def make_fixture_git_remote(tmp_path: Path):
         run_git(["add", "."], cwd=remote)
         run_git(["commit", "--quiet", "-m", "australia branch content"], cwd=remote)
 
+        run_git(["checkout", "--quiet", "-b", "brazil"], cwd=remote)
+        (remote / "markdown" / "category-one" / "brazil-only.md").write_text("brazil branch only\n")
+        run_git(["add", "."], cwd=remote)
+        run_git(["commit", "--quiet", "-m", "brazil branch content"], cwd=remote)
+
+        run_git(["checkout", "--quiet", "australia"], cwd=remote)
         run_git(["checkout", "--quiet", "-b", "store"], cwd=remote)
         (remote / "RELEASE_NOTES.md").write_text("store branch only\n")
         run_git(["add", "."], cwd=remote)

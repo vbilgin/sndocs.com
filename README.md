@@ -10,7 +10,10 @@ removed. The built site presents as **sndocs**, an independent, unendorsed
 mirror; see [Attribution and licensing](#attribution-and-licensing).
 
 This repository holds code and config only. It does not house releases, CI/CD
-automation, or generated output. v1 targets the `australia` release branch.
+automation, or generated output. `sndocs fetch` defaults to the `australia`
+release family; pass `--release` (or set `SNDOCS_RELEASE`) to fetch a
+different one — see [Usage](#usage). `normalize`/`build`/`all` do not yet have
+their own release selection and continue to assume a single fetched release.
 
 ## Install
 
@@ -34,14 +37,15 @@ Or run the steps individually:
 
 | Command           | What it does                                                             |
 | ----------------- | ----------------------------------------------------------------------- |
-| `sndocs fetch`    | Shallow-clone (or update) the `australia` branch into `.sndocs/repo/`.  |
+| `sndocs fetch`    | Shallow-clone (or update) a release family's branch into `.sndocs/repo/<release>/` (default `australia`; `--release`/`SNDOCS_RELEASE` select `xanadu`, `yokohama`, `zurich`, `australia`, or `brazil`). |
 | `sndocs normalize`| Normalize `.sndocs/repo/` into `.sndocs/normalized/`.                   |
 | `sndocs build`    | Render the MkDocs site into `.sndocs/site/` and index it with Pagefind. |
 | `sndocs serve`    | Serve `.sndocs/site/` on localhost — no rebuild, no watch.             |
 | `sndocs all`      | `fetch` → `normalize` → `build` in sequence.                            |
 
 `sndocs --version` reports the installed version. `sndocs COMMAND --help` shows
-per-command options (`--workers`, `--minify/--no-minify`, `--port`, …).
+per-command options (`--release`, `--workers`, `--minify/--no-minify`,
+`--port`, …).
 
 ### Progress and output
 
@@ -66,8 +70,9 @@ pipes), the animated bar is replaced by periodic plain progress lines and
 warnings/errors are prefixed `WARNING:` / `ERROR:`.
 
 Everything generated lives under the project-local, gitignored `.sndocs/`
-directory: `repo/` (cloned source), `normalized/` (normalized Markdown), and
-`site/` (built site). Only `fetch` needs network access.
+directory: `repo/<release>/` (cloned source, one subdirectory per fetched
+release family), `normalized/` (normalized Markdown), and `site/` (built
+site). Only `fetch` needs network access.
 
 ## Development
 

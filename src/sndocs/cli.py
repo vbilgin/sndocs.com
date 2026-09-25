@@ -10,7 +10,7 @@ import click
 
 from sndocs import __version__
 from sndocs.build import BuildObserver, PagefindIndexingFailed, build_site
-from sndocs.fetch import FetchObserver, fetch_repo
+from sndocs.fetch import DEFAULT_RELEASE, RELEASE_FAMILIES, FetchObserver, fetch_repo
 from sndocs.minify import MinifyReport
 from sndocs.normalize import (
     REPORT_FILENAME,
@@ -171,22 +171,32 @@ class _ReporterFetchObserver(FetchObserver):
 
 
 @cli.command()
+@click.option(
+    "--release",
+    envvar="SNDOCS_RELEASE",
+    type=click.Choice(RELEASE_FAMILIES),
+    default=DEFAULT_RELEASE,
+    show_default=True,
+    help="ServiceNowDocs release family to fetch. Also settable via SNDOCS_RELEASE; "
+    "--release takes precedence.",
+)
 @click.pass_context
-def fetch(ctx: click.Context) -> None:
-    """Clone or update the australia branch of ServiceNowDocs into .sndocs/repo/."""
+def fetch(ctx: click.Context, release: str) -> None:
+    """Clone or update a release family's branch of ServiceNowDocs into .sndocs/repo/<release>/."""
     reporter: Reporter = ctx.obj
+    dest = REPO_DIR / release
     try:
-        fetch_repo(REPO_DIR, observer=_ReporterFetchObserver(reporter))
+        fetch_repo(dest, branch=release, observer=_ReporterFetchObserver(reporter))
     except subprocess.CalledProcessError as exc:
         reporter.error(
             "Fetch failed",
-            f"git exited {exc.returncode} while syncing the corpus into {REPO_DIR}. "
+            f"git exited {exc.returncode} while syncing the corpus into {dest}. "
             "Check network access to the ServiceNowDocs remote and that the "
             "directory is writable.",
         )
         reporter.print_exception(exc)
         raise SystemExit(1) from exc
-    reporter.summary(f"fetch: synced to {REPO_DIR}")
+    reporter.summary(f"fetch: synced to {dest}")
 
 
 @cli.command()
