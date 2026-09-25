@@ -66,6 +66,28 @@ def test_all_runs_the_full_pipeline_from_a_clean_checkout(stubbed_remote: Path, 
         assert ".sndocs/site" in result.output.split("all:", 1)[1]
 
 
+def test_all_reports_upstreams_live_default_branch_through_the_fetch_step(
+    stubbed_remote: Path, tmp_path: Path, monkeypatch
+) -> None:
+    """`all` invokes `fetch` via `ctx.invoke`, which reports no --release given
+    differently from a direct `sndocs fetch` (its parameter source is `None`,
+    not `DEFAULT`) — this would otherwise silently skip issue #61's visibility
+    line under the documented one-command pipeline."""
+    monkeypatch.setattr(fetch_module, "resolve_upstream_default_branch", lambda remote_url: "brazil")
+
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        _seed_site_config()
+
+        result = runner.invoke(cli, ["all"])
+
+        assert result.exit_code == 0, result.output
+        assert (
+            "fetch: no --release given, using default `australia`; "
+            "upstream's current default branch is `brazil`" in result.output
+        )
+
+
 def test_all_runs_the_steps_in_fetch_normalize_build_order(stubbed_remote: Path, tmp_path: Path) -> None:
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):

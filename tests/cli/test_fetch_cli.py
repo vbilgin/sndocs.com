@@ -137,6 +137,99 @@ def test_fetch_rerunning_for_a_release_already_on_disk_updates_it_in_place(
         assert marker.exists()
 
 
+# -- Seam 3: live upstream-default visibility (issue #61) --------------------
+
+
+@pytest.fixture
+def stubbed_default_branch(monkeypatch):
+    """Stubs `fetch_module.resolve_upstream_default_branch` (mirroring how
+    `fetch_module.REMOTE_URL` is stubbed today) so CLI tests get a
+    deterministic upstream default without a live lookup."""
+
+    def _stub(name: str = "brazil"):
+        monkeypatch.setattr(fetch_module, "resolve_upstream_default_branch", lambda remote_url: name)
+
+    return _stub
+
+
+def test_fetch_with_nothing_specified_reports_upstreams_live_default_branch(
+    stubbed_remote: Path, stubbed_default_branch, tmp_path: Path
+) -> None:
+    stubbed_default_branch("brazil")
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        result = runner.invoke(cli, ["fetch"])
+
+        assert result.exit_code == 0, result.output
+        assert (
+            "fetch: no --release given, using default `australia`; "
+            "upstream's current default branch is `brazil`" in result.output
+        )
+
+
+def test_fetch_release_flag_does_not_perform_the_live_lookup(
+    stubbed_remote: Path, tmp_path: Path, monkeypatch
+) -> None:
+    def _fail_if_called(remote_url: str) -> str:
+        raise AssertionError("resolve_upstream_default_branch should not be called")
+
+    monkeypatch.setattr(fetch_module, "resolve_upstream_default_branch", _fail_if_called)
+
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        result = runner.invoke(cli, ["fetch", "--release", "brazil"])
+
+        assert result.exit_code == 0, result.output
+        assert "upstream's current default branch" not in result.output
+
+
+def test_fetch_sndocs_release_env_var_also_skips_the_live_lookup(
+    stubbed_remote: Path, tmp_path: Path, monkeypatch
+) -> None:
+    def _fail_if_called(remote_url: str) -> str:
+        raise AssertionError("resolve_upstream_default_branch should not be called")
+
+    monkeypatch.setattr(fetch_module, "resolve_upstream_default_branch", _fail_if_called)
+    monkeypatch.setenv("SNDOCS_RELEASE", "brazil")
+
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        result = runner.invoke(cli, ["fetch"])
+
+        assert result.exit_code == 0, result.output
+        assert "upstream's current default branch" not in result.output
+
+
+def test_fetch_quiet_suppresses_the_default_branch_line(
+    stubbed_remote: Path, stubbed_default_branch, tmp_path: Path
+) -> None:
+    stubbed_default_branch("brazil")
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        result = runner.invoke(cli, ["fetch", "-q"])
+
+        assert result.exit_code == 0, result.output
+        assert result.output == ""
+        assert result.stderr == ""
+
+
+def test_fetch_failed_default_branch_lookup_is_surfaced_but_fetch_still_succeeds(
+    stubbed_remote: Path, tmp_path: Path, monkeypatch
+) -> None:
+    def _boom(remote_url: str) -> str:
+        raise subprocess.CalledProcessError(128, ["git", "ls-remote", "--symref", remote_url, "HEAD"])
+
+    monkeypatch.setattr(fetch_module, "resolve_upstream_default_branch", _boom)
+
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        result = runner.invoke(cli, ["fetch"])
+
+        assert result.exit_code == 0, result.output
+        assert "could not determine upstream's current default branch" in result.output
+        assert Path(".sndocs/repo/australia/markdown/category-one/index.md").is_file()
+
+
 # -- Seam 1: fetch through the Reporter (issue #50) --------------------------
 
 

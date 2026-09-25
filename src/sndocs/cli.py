@@ -169,6 +169,16 @@ class _ReporterFetchObserver(FetchObserver):
     def command(self, argv: list[str]) -> None:
         self._reporter.log(f"$ {shlex.join(argv)}")
 
+    def default_branch_resolved(self, branch: str) -> None:
+        self._reporter.summary(
+            f"fetch: no --release given, using default `{DEFAULT_RELEASE}`; "
+            f"upstream's current default branch is `{branch}`"
+        )
+
+    def default_branch_lookup_failed(self, error: Exception) -> None:
+        self._reporter.warn(f"could not determine upstream's current default branch: {error}")
+        self._reporter.flush_warnings()
+
 
 @cli.command()
 @click.option(
@@ -185,8 +195,20 @@ def fetch(ctx: click.Context, release: str) -> None:
     """Clone or update a release family's branch of ServiceNowDocs into .sndocs/repo/<release>/."""
     reporter: Reporter = ctx.obj
     dest = REPO_DIR / release
+    # Only when the user left the release unspecified — neither --release nor
+    # SNDOCS_RELEASE — do we resolve and report upstream's live default branch
+    # (issue #61); an explicit choice skips the lookup entirely. `ctx.invoke`
+    # (as `all` uses to run this command) reports the source as `None` rather
+    # than `DEFAULT`, so both count as unspecified.
+    release_source = ctx.get_parameter_source("release")
+    release_unspecified = release_source in (None, click.ParameterSource.DEFAULT)
     try:
-        fetch_repo(dest, branch=release, observer=_ReporterFetchObserver(reporter))
+        fetch_repo(
+            dest,
+            branch=release,
+            observer=_ReporterFetchObserver(reporter),
+            report_default_branch=release_unspecified,
+        )
     except subprocess.CalledProcessError as exc:
         reporter.error(
             "Fetch failed",
