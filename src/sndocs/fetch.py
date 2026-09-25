@@ -45,6 +45,36 @@ class FetchObserver:
         """Surface one git command line about to run. Only called when
         `logs_commands` is true — i.e. at `-vv`."""
 
+    def default_branch_resolved(self, branch: str) -> None:
+        """Called with upstream's current default branch when
+        `fetch_repo(report_default_branch=True)` successfully resolves it, before
+        the clone/update starts. This is visibility only (issue #61): it never
+        changes `branch`, the release actually being fetched."""
+
+    def default_branch_lookup_failed(self, error: Exception) -> None:
+        """Called instead of `default_branch_resolved` when that live lookup
+        fails (e.g. the remote is unreachable). `fetch_repo` swallows the
+        error and continues with the fixed default branch regardless — this
+        hook is how the failure gets surfaced rather than silently dropped."""
+
+
+def resolve_upstream_default_branch(remote_url: str) -> str:
+    """Resolves `remote_url`'s current default branch — the branch its HEAD
+    symref points at — via `git ls-remote --symref <remote_url> HEAD`.
+
+    Raises `subprocess.CalledProcessError` if the remote can't be reached, and
+    `RuntimeError` if it responds but without the expected HEAD symref line."""
+    result = subprocess.run(
+        ["git", "ls-remote", "--symref", remote_url, "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    for line in result.stdout.splitlines():
+        if line.startswith("ref:"):
+            return line.split("\t", 1)[0].removeprefix("ref: refs/heads/")
+    raise RuntimeError(f"no HEAD symref in `git ls-remote --symref` output for {remote_url!r}")
+
 
 def fetch_repo(
     dest: Path,
@@ -52,14 +82,29 @@ def fetch_repo(
     branch: str = DEFAULT_RELEASE,
     *,
     observer: FetchObserver | None = None,
+    report_default_branch: bool = False,
 ) -> None:
     """Shallow-clone `branch` of `remote_url` into `dest`, or update it in place if `dest`
     is already a clone.
 
     `observer` receives the spinner / verbosity hooks (issue #50); the default
-    no-op `FetchObserver` keeps the operation silent for direct callers."""
+    no-op `FetchObserver` keeps the operation silent for direct callers.
+
+    `report_default_branch` additionally resolves and reports upstream's actual
+    current default branch via `observer.default_branch_resolved` — visibility
+    only (issue #61); it never changes which branch is fetched. A failed lookup
+    is routed to `observer.default_branch_lookup_failed` instead of raising, so
+    it never fails the fetch itself."""
     observer = observer if observer is not None else FetchObserver()
     remote_url = remote_url if remote_url is not None else REMOTE_URL
+
+    if report_default_branch:
+        try:
+            upstream_default = resolve_upstream_default_branch(remote_url)
+        except (subprocess.CalledProcessError, RuntimeError) as exc:
+            observer.default_branch_lookup_failed(exc)
+        else:
+            observer.default_branch_resolved(upstream_default)
 
     if (dest / ".git").is_dir():
         with observer.phase("updating"):
