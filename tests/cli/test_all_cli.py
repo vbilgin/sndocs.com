@@ -40,13 +40,16 @@ def test_all_runs_the_full_pipeline_from_a_clean_checkout(stubbed_remote: Path, 
         result = runner.invoke(cli, ["all"])
         assert result.exit_code == 0, result.output
 
-        # Each stage wrote its output directory, in order.
-        assert Path(".sndocs/repo/markdown/category-one/index.md").is_file()
-        assert Path(".sndocs/normalized/markdown/category-one/index.md").is_file()
+        # Each stage wrote its output directory, in order. `fetch` now lands
+        # content under a release-scoped subdirectory (issue #60); normalize and
+        # build mirror that nesting through until they gain their own release
+        # scoping in a later ticket.
+        assert Path(".sndocs/repo/australia/markdown/category-one/index.md").is_file()
+        assert Path(".sndocs/normalized/australia/markdown/category-one/index.md").is_file()
         assert Path(".sndocs/site").is_dir()
 
         # The final built site is well-formed: MkDocs rendered the corpus...
-        index_html = Path(".sndocs/site/markdown/category-one/index.html").read_text()
+        index_html = Path(".sndocs/site/australia/markdown/category-one/index.html").read_text()
         assert "<title>Category One" in index_html
         assert "Landing page for the category-one fixture section." in index_html
 
@@ -149,7 +152,7 @@ def test_all_stops_with_a_clear_error_when_a_step_fails(
         assert result.exit_code != 0
         assert "2 file(s) failed normalization invariants" in result.output
         # fetch ran, but the failing normalize stopped the pipeline before build.
-        assert Path(".sndocs/repo/markdown/category-one/index.md").is_file()
+        assert Path(".sndocs/repo/australia/markdown/category-one/index.md").is_file()
         assert not Path(".sndocs/site").exists()
 
 
